@@ -1,43 +1,44 @@
 const KhronosURL = 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/';
+
 const dropdown = document.getElementById('gltf-samples');
+const canvas = document.querySelector('#glcanvas');
 
 var cubeRotation = 0.0;
 
-main();
-
-function getJsonFromUrlAsync(url, callback) {
-  var xmlhttp = new XMLHttpRequest();
-  xmlhttp.onreadystatechange = function() {
-    if (xmlhttp.readyState == 4 && xmlhttp.status == 200) {
-      try {
-          var data = JSON.parse(xmlhttp.responseText);
-      } catch(err) {
-          console.log(err.message + " in " + xmlhttp.responseText);
-          return;
+function getFromUrl(url) {
+  return new Promise((resolve, reject) => {
+    var xmlhttp = new XMLHttpRequest();
+    xmlhttp.onreadystatechange = function() {
+      if (xmlhttp.readyState == 4 && xmlhttp.status == 200) {
+        try {
+            resolve(xmlhttp.responseText);
+        } catch(err) {
+            console.log(err.message + " in " + xmlhttp.responseText);
+            reject(err.message);
+            return;
+        }
       }
-      callback(data);
-    }
-  };
+    };
 
-  xmlhttp.open("GET", url, true);
-  xmlhttp.send();
-}
-
-function gltfLoader(url) {
-  dropdown.setAttribute('disabled', true);
-  getJsonFromUrlAsync(url, (gltfJson) => {
-    dropdown.removeAttribute('disabled');
-    console.log(gltfJson);
+    xmlhttp.open("GET", url, true);
+    xmlhttp.send();
   });
 }
 
 (function(){
+  // start drawing
+  const gl = canvas.getContext('webgl');
+  runShaderProgram(gl);
+
+  const loader = new GltfLoader(gl);
+
+  // attach HTML events
   dropdown.addEventListener('change', (evt) => {
     const opts = evt.target.options;
     const idx = evt.target.selectedIndex;
     const url = opts[idx].value;
     if (url) {
-      gltfLoader(KhronosURL + url);
+      loader.load(KhronosURL + url);
     }
   });
 })();
@@ -45,10 +46,118 @@ function gltfLoader(url) {
 //
 // Start here
 //
-function main() {
-  const canvas = document.querySelector('#glcanvas');
-  const gl = canvas.getContext('webgl');
+function GltfLoader(gl) {
+  this.isLoading = false;
+  this.gl = gl;
+  this.raw = null;
+  this.graph = {};
+  this.baseURI = './';
+}
 
+GltfLoader.prototype.setIsLoading = function (isLoading) {
+  this.isLoading = isLoading;
+  if (isLoading) {
+    dropdown.setAttribute('disabled', true);
+  } else {
+    dropdown.removeAttribute('disabled');
+  }
+};
+
+GltfLoader.prototype.load = async function (url) {
+  const gl = this.gl;
+
+  this.setIsLoading(true);
+  this.raw = JSON.parse(await getFromUrl(url));
+  this.setIsLoading(false);
+  console.log(this.raw);
+
+  if (!this.raw) return;
+
+  this.baseURI = url.substring(0, url.lastIndexOf('/')) + '/';
+
+  // buffers
+  this.buffers = [];
+  for (let i=0; i < (this.raw.buffers || []).length; ++i) {
+    this.buffers.push(await getFromUrl(this.baseURI + this.raw.buffers[i].uri));
+  }
+  console.log('Buffer', this.buffers);
+
+  this.textures = [];
+  
+  for (let i=0; i < (this.raw.textures || []).length; ++i) {
+    const texture = this.raw.textures[i];
+    let url = null;
+    if (texture.source !== undefined) {
+      url = this.raw.images[texture.source].uri;
+    }
+    let sampler = null;
+    if (texture.sampler !== undefined) {
+      sampler = this.raw.samplers[texture.sampler];
+    }
+    this.textures.push(this.loadTexture(this.baseURI + url, sampler));
+  }
+  console.log('Textures', this.textures);
+};
+
+GltfLoader.prototype.loadTexture = function (url, sampler) {
+  const gl = this.gl;
+  sampler = sampler || {};
+
+  const texture = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+
+  // Because images have to be download over the internet
+  // they might take a moment until they are ready.
+  // Until then put a single pixel in the texture so we can
+  // use it immediately. When the image has finished downloading
+  // we'll update the texture with the contents of the image.
+  const level = 0;
+  const internalFormat = gl.RGBA;
+  const width = 1;
+  const height = 1;
+  const border = 0;
+  const srcFormat = gl.RGBA;
+  const srcType = gl.UNSIGNED_BYTE;
+  const pixel = new Uint8Array([0, 0, 255, 255]);  // opaque blue
+  gl.texImage2D(gl.TEXTURE_2D, level, internalFormat,
+                width, height, border, srcFormat, srcType,
+                pixel);
+
+  const image = new Image();
+  image.onload = function() {
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texImage2D(gl.TEXTURE_2D, level, internalFormat,
+                  srcFormat, srcType, image);
+
+    // WebGL1 has different requirements for power of 2 images
+    // vs non power of 2 images so check if the image is a
+    // power of 2 in both dimensions.
+    if (isPowerOf2(image.width) && isPowerOf2(image.height)) {
+      // Yes, it's a power of 2. Generate mips.
+      gl.generateMipmap(gl.TEXTURE_2D);
+    } else {
+      // No, it's not a power of 2. Turn of mips and set
+      // wrapping to clamp to edge
+      if (sampler.wrapS) {
+        gl.texParameteri(gl.TEXTURE_2D, sampler.wrapS, gl.CLAMP_TO_EDGE);
+      } else {
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+      }
+      if (sampler.wrapT) {
+        gl.texParameteri(gl.TEXTURE_2D, sampler.wrapT, gl.CLAMP_TO_EDGE);
+      } else {
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+      }
+      gl.texParameteri(gl.TEXTURE_2D, sampler.minFilter || gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, sampler.magFilter || gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    }
+  };
+  image.src = url;
+
+  return texture;
+}
+
+function runShaderProgram(gl) {
   // If we don't have a GL context, give up now
 
   if (!gl) {
