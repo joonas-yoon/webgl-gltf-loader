@@ -1,6 +1,46 @@
+const KhronosURL = 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/';
+const dropdown = document.getElementById('gltf-samples');
+
 var cubeRotation = 0.0;
 
 main();
+
+function getJsonFromUrlAsync(url, callback) {
+  var xmlhttp = new XMLHttpRequest();
+  xmlhttp.onreadystatechange = function() {
+    if (xmlhttp.readyState == 4 && xmlhttp.status == 200) {
+      try {
+          var data = JSON.parse(xmlhttp.responseText);
+      } catch(err) {
+          console.log(err.message + " in " + xmlhttp.responseText);
+          return;
+      }
+      callback(data);
+    }
+  };
+
+  xmlhttp.open("GET", url, true);
+  xmlhttp.send();
+}
+
+function gltfLoader(url) {
+  dropdown.setAttribute('disabled', true);
+  getJsonFromUrlAsync(url, (gltfJson) => {
+    dropdown.removeAttribute('disabled');
+    console.log(gltfJson);
+  });
+}
+
+(function(){
+  dropdown.addEventListener('change', (evt) => {
+    const opts = evt.target.options;
+    const idx = evt.target.selectedIndex;
+    const url = opts[idx].value;
+    if (url) {
+      gltfLoader(KhronosURL + url);
+    }
+  });
+})();
 
 //
 // Start here
