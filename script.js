@@ -5,13 +5,13 @@ const canvas = document.querySelector('#glcanvas');
 
 var cubeRotation = 0.0;
 
-function getFromUrl(url) {
+async function loadData(url, dataType) {
   return new Promise((resolve, reject) => {
     var xmlhttp = new XMLHttpRequest();
     xmlhttp.onreadystatechange = function() {
       if (xmlhttp.readyState == 4 && xmlhttp.status == 200) {
         try {
-            resolve(xmlhttp.responseText);
+            resolve(xmlhttp.response);
         } catch(err) {
             console.log(err.message + " in " + xmlhttp.responseText);
             reject(err.message);
@@ -21,6 +21,7 @@ function getFromUrl(url) {
     };
 
     xmlhttp.open("GET", url, true);
+    xmlhttp.responseType = dataType || '';
     xmlhttp.send();
   });
 }
@@ -38,7 +39,8 @@ function getFromUrl(url) {
     const idx = evt.target.selectedIndex;
     const url = opts[idx].value;
     if (url) {
-      loader.load(KhronosURL + url);
+      loader.load(new URL(url, KhronosURL).href);
+      loader.draw
     }
   });
 })();
@@ -49,9 +51,9 @@ function getFromUrl(url) {
 function GltfLoader(gl) {
   this.isLoading = false;
   this.gl = gl;
-  this.raw = null;
-  this.graph = {};
-  this.baseURI = './';
+  this.gltf = null;
+  this.json = {};
+  this.baseURL = './';
 }
 
 GltfLoader.prototype.setIsLoading = function (isLoading) {
@@ -65,39 +67,100 @@ GltfLoader.prototype.setIsLoading = function (isLoading) {
 
 GltfLoader.prototype.load = async function (url) {
   const gl = this.gl;
+  const self = this;
 
   this.setIsLoading(true);
-  this.raw = JSON.parse(await getFromUrl(url));
+  this.json = await loadData(url, 'json');
+  this.gltf = JSON.parse(JSON.stringify(this.json)); // deep copy to reconstruct
   this.setIsLoading(false);
-  console.log(this.raw);
+  console.log(this.json);
 
-  if (!this.raw) return;
+  if (!this.gltf) return;
 
-  this.baseURI = url.substring(0, url.lastIndexOf('/')) + '/';
+  this.baseURL = new URL(url, location.href);
+  console.log(this.baseURL);
 
   // buffers
-  this.buffers = [];
-  for (let i=0; i < (this.raw.buffers || []).length; ++i) {
-    this.buffers.push(await getFromUrl(this.baseURI + this.raw.buffers[i].uri));
-  }
-  console.log('Buffer', this.buffers);
-
-  this.textures = [];
+  this.gltf.buffers = await Promise.all(this.gltf.buffers.map((buffer) => {
+    const url = new URL(buffer.uri, self.baseURL.href);
+    return loadData(url.href, 'arraybuffer');
+  }));
+  console.log('Buffer', this.gltf.buffers);
   
-  for (let i=0; i < (this.raw.textures || []).length; ++i) {
-    const texture = this.raw.textures[i];
-    let url = null;
+  // buffer views
+  this.gltf.bufferViews = await Promise.all(this.gltf.bufferViews.map((bufferView) => {
+    bufferView._view = new DataView(
+      self.gltf.buffers[bufferView.buffer],
+      bufferView.byteOffset,
+      bufferView.byteLength
+    );
+    bufferView._count = bufferView.byteLength / (bufferView.byteStride || 1);
+    return bufferView;
+  }));
+  console.log('Buffer View', this.gltf.bufferViews);
+
+  // accessors
+  this.gltf.accessors = await Promise.all(this.gltf.accessors.map((accessor) => {
+    const view = self.gltf.bufferViews[accessor.bufferView];
+    const buffer = self.gltf.buffers[view.buffer];
+    const typedArray = new getTypedArray(accessor.componentType);
+    accessor._typedArray = new typedArray(buffer, view.byteOffset + (accessor.byteOffset || 0), accessor.count);
+    return accessor;
+  }));
+  console.log('Accessor', this.gltf.accessors);
+
+  // textures
+  this.gltf.textures = await Promise.all(this.gltf.textures.map((texture) => {
+    let uri = null;
     if (texture.source !== undefined) {
-      url = this.raw.images[texture.source].uri;
+      uri = self.gltf.images[texture.source].uri;
     }
     let sampler = null;
     if (texture.sampler !== undefined) {
-      sampler = this.raw.samplers[texture.sampler];
+      sampler = self.gltf.samplers[texture.sampler];
     }
-    this.textures.push(this.loadTexture(this.baseURI + url, sampler));
-  }
-  console.log('Textures', this.textures);
+    const url = new URL(uri, self.baseURL.href);
+    texture._texture = self.loadTexture(url.href, sampler);
+    return texture;
+  }));
+  console.log('Textures', this.gltf.textures);
+  
+  console.log('gltf loaded', this.gltf);
 };
+
+function getComponentsType(componentType) {
+  return {
+    'SCALAR': 1,
+    'VEC2': 2,
+    'VEC3': 3,
+    'VEC4': 4,
+    'MAT2': 4,
+    'MAT3': 9,
+    'MAT4': 16
+  }[componentType];
+}
+
+function getComponentByteSize(componentType) {
+  return {
+    5120: 1, // BYTE
+    5121: 1, // UNSIGNED_BYTE
+    5122: 2, // SHORT
+    5123: 2, // UNSIGNED_SHORT
+    5125: 4, // UNSIGNED_INT
+    5126: 4  // FLOAT
+  }[componentType];
+}
+
+function getTypedArray(componentType) {
+  return {
+    5120: Int8Array, // BYTE
+    5121: Uint8Array, // UNSIGNED_BYTE
+    5122: Int16Array, // SHORT
+    5123: Uint16Array, // UNSIGNED_SHORT
+    5125: Uint32Array, // UNSIGNED_INT
+    5126: Float32Array  // FLOAT
+  }[componentType];
+}
 
 GltfLoader.prototype.loadTexture = function (url, sampler) {
   const gl = this.gl;
