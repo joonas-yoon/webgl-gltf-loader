@@ -1,9 +1,6 @@
 const KhronosURL = 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/';
 
 const dropdown = document.getElementById('gltf-samples');
-const canvas = document.querySelector('#glcanvas');
-
-var cubeRotation = 0.0;
 
 async function loadData(url, dataType) {
   return new Promise((resolve, reject) => {
@@ -26,34 +23,16 @@ async function loadData(url, dataType) {
   });
 }
 
-(function(){
-  // start drawing
-  const gl = canvas.getContext('webgl');
-  runShaderProgram(gl);
-
-  const loader = new GltfLoader(gl);
-
-  // attach HTML events
-  dropdown.addEventListener('change', (evt) => {
-    const opts = evt.target.options;
-    const idx = evt.target.selectedIndex;
-    const url = opts[idx].value;
-    if (url) {
-      loader.load(new URL(url, KhronosURL).href);
-      loader.draw
-    }
-  });
-})();
-
 //
-// Start here
+// Loader/Parser
+// to load/parse json to object
 //
-function GltfLoader(gl) {
+function GltfLoader() {
   this.isLoading = false;
-  this.gl = gl;
   this.gltf = null;
   this.json = {};
-  this.baseURL = './';
+  this.baseURL = new URL('.', location.href);
+  return this;
 }
 
 GltfLoader.prototype.setIsLoading = function (isLoading) {
@@ -66,7 +45,6 @@ GltfLoader.prototype.setIsLoading = function (isLoading) {
 };
 
 GltfLoader.prototype.load = async function (url) {
-  const gl = this.gl;
   const self = this;
 
   this.setIsLoading(true);
@@ -78,7 +56,7 @@ GltfLoader.prototype.load = async function (url) {
   if (!this.gltf) return;
 
   this.baseURL = new URL(url, location.href);
-  console.log(this.baseURL);
+  this.gltf.baseURL = this.baseURL;
 
   // buffers
   this.gltf.buffers = await Promise.all(this.gltf.buffers.map((buffer) => {
@@ -108,24 +86,9 @@ GltfLoader.prototype.load = async function (url) {
     return accessor;
   }));
   console.log('Accessor', this.gltf.accessors);
-
-  // textures
-  this.gltf.textures = await Promise.all(this.gltf.textures.map((texture) => {
-    let uri = null;
-    if (texture.source !== undefined) {
-      uri = self.gltf.images[texture.source].uri;
-    }
-    let sampler = null;
-    if (texture.sampler !== undefined) {
-      sampler = self.gltf.samplers[texture.sampler];
-    }
-    const url = new URL(uri, self.baseURL.href);
-    texture._texture = self.loadTexture(url.href, sampler);
-    return texture;
-  }));
-  console.log('Textures', this.gltf.textures);
   
   console.log('gltf loaded', this.gltf);
+  return this.gltf;
 };
 
 function getComponentsType(componentType) {
@@ -162,8 +125,112 @@ function getTypedArray(componentType) {
   }[componentType];
 }
 
-GltfLoader.prototype.loadTexture = function (url, sampler) {
-  const gl = this.gl;
+//
+// Renderer
+//
+function GltfRenderer() {}
+
+GltfRenderer.prototype.createProgram = function (gl, vertexShaderCode, fragmentShaderCode) {
+  const vertexShader = this.loadShader(gl, gl.VERTEX_SHADER, vertexShaderCode);
+  const fragmentShader = this.loadShader(gl, gl.FRAGMENT_SHADER, fragmentShaderCode);
+
+  // Create the shader program
+  const shaderProgram = gl.createProgram();
+  gl.attachShader(shaderProgram, vertexShader);
+  gl.attachShader(shaderProgram, fragmentShader);
+  gl.linkProgram(shaderProgram);
+
+  // If creating the shader program failed, alert
+  if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+    alert('Unable to initialize the shader program: ' + gl.getProgramInfoLog(shaderProgram));
+    return null;
+  }
+
+  return shaderProgram;
+};
+
+GltfRenderer.prototype.loadShader = function (gl, type, source) {
+  const shader = gl.createShader(type);
+
+  // Send the source to the shader object
+  gl.shaderSource(shader, source);
+
+  // Compile the shader program
+  gl.compileShader(shader);
+
+  // See if it compiled successfully
+  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+    alert('An error occurred compiling the shaders: ' + gl.getShaderInfoLog(shader));
+    gl.deleteShader(shader);
+    return null;
+  }
+
+  return shader;
+};
+
+GltfRenderer.prototype.runShaderProgram = function (gl, gltf, vsSource, fsSource) {
+  const shaderProgram = this.createProgram(gl, vsSource, fsSource);
+
+  // Collect all the info needed to use the shader program.
+  // Look up which attributes our shader program is using
+  // for aVertexPosition, aVertexNormal, aTextureCoord,
+  // and look up uniform locations.
+  const programInfo = {
+    program: shaderProgram,
+    attribLocations: {
+      vertexPosition: gl.getAttribLocation(shaderProgram, 'aVertexPosition'),
+      vertexNormal: gl.getAttribLocation(shaderProgram, 'aVertexNormal'),
+      textureCoord: gl.getAttribLocation(shaderProgram, 'aTextureCoord'),
+    },
+    uniformLocations: {
+      projectionMatrix: gl.getUniformLocation(shaderProgram, 'uProjectionMatrix'),
+      modelViewMatrix: gl.getUniformLocation(shaderProgram, 'uModelViewMatrix'),
+      normalMatrix: gl.getUniformLocation(shaderProgram, 'uNormalMatrix'),
+      uSampler: gl.getUniformLocation(shaderProgram, 'uSampler'),
+    }
+  };
+
+  this.drawScene(gl, programInfo, gltf);
+
+  // var then = 0;
+
+  // // Draw the scene repeatedly
+  // function render(now) {
+  //   now *= 0.001;  // convert to seconds
+  //   const deltaTime = now - then;
+  //   then = now;
+
+  //   drawScene(gl, programInfo, buffers, texture, deltaTime);
+
+  //   requestAnimationFrame(render);
+  // }
+  // requestAnimationFrame(render);
+};
+
+GltfRenderer.prototype.initBuffers = async function (gl, gltf) {
+  const self = this;
+
+  // textures
+  const textures = await Promise.all(gltf.textures.map((texture) => {
+    let uri = null;
+    if (texture.source !== undefined) {
+      uri = gltf.images[texture.source].uri;
+    }
+    let sampler = null;
+    if (texture.sampler !== undefined) {
+      sampler = gltf.samplers[texture.sampler];
+    }
+    const url = new URL(uri, gltf.baseURL.href);
+    texture._texture = self.loadTexture(gl, url.href, sampler);
+    return texture;
+  }));
+
+  return {
+    textures: textures
+  };
+};
+
+GltfRenderer.prototype.loadTexture = function (gl, url, sampler) {
   sampler = sampler || {};
 
   const texture = gl.createTexture();
@@ -192,94 +259,29 @@ GltfLoader.prototype.loadTexture = function (url, sampler) {
     gl.texImage2D(gl.TEXTURE_2D, level, internalFormat,
                   srcFormat, srcType, image);
 
-    // WebGL1 has different requirements for power of 2 images
-    // vs non power of 2 images so check if the image is a
-    // power of 2 in both dimensions.
-    if (isPowerOf2(image.width) && isPowerOf2(image.height)) {
-      // Yes, it's a power of 2. Generate mips.
-      gl.generateMipmap(gl.TEXTURE_2D);
+    if (sampler.wrapS) {
+      gl.texParameteri(gl.TEXTURE_2D, sampler.wrapS, gl.CLAMP_TO_EDGE);
     } else {
-      // No, it's not a power of 2. Turn of mips and set
-      // wrapping to clamp to edge
-      if (sampler.wrapS) {
-        gl.texParameteri(gl.TEXTURE_2D, sampler.wrapS, gl.CLAMP_TO_EDGE);
-      } else {
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
-      }
-      if (sampler.wrapT) {
-        gl.texParameteri(gl.TEXTURE_2D, sampler.wrapT, gl.CLAMP_TO_EDGE);
-      } else {
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
-      }
-      gl.texParameteri(gl.TEXTURE_2D, sampler.minFilter || gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, sampler.magFilter || gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
     }
+    if (sampler.wrapT) {
+      gl.texParameteri(gl.TEXTURE_2D, sampler.wrapT, gl.CLAMP_TO_EDGE);
+    } else {
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+    }
+    gl.texParameteri(gl.TEXTURE_2D, sampler.minFilter || gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, sampler.magFilter || gl.TEXTURE_MAG_FILTER, gl.LINEAR);
   };
   image.src = url;
 
   return texture;
-}
+};
 
-function runShaderProgram(gl) {
-  // If we don't have a GL context, give up now
+GltfRenderer.prototype.drawScene = function (gl, programInfo, gltf) {
+  console.log(gltf);
+};
 
-  if (!gl) {
-    alert('Unable to initialize WebGL. Your browser or machine may not support it.');
-    return;
-  }
-
-  // Vertex shader program
-
-  const vsSource = document.getElementById('vertex-shader').innerText;
-
-  // Fragment shader program
-
-  const fsSource = document.getElementById('fragment-shader').innerText;
-
-  // Initialize a shader program; this is where all the lighting
-  // for the vertices and so forth is established.
-  const shaderProgram = initShaderProgram(gl, vsSource, fsSource);
-
-  // Collect all the info needed to use the shader program.
-  // Look up which attributes our shader program is using
-  // for aVertexPosition, aVertexNormal, aTextureCoord,
-  // and look up uniform locations.
-  const programInfo = {
-    program: shaderProgram,
-    attribLocations: {
-      vertexPosition: gl.getAttribLocation(shaderProgram, 'aVertexPosition'),
-      vertexNormal: gl.getAttribLocation(shaderProgram, 'aVertexNormal'),
-      textureCoord: gl.getAttribLocation(shaderProgram, 'aTextureCoord'),
-    },
-    uniformLocations: {
-      projectionMatrix: gl.getUniformLocation(shaderProgram, 'uProjectionMatrix'),
-      modelViewMatrix: gl.getUniformLocation(shaderProgram, 'uModelViewMatrix'),
-      normalMatrix: gl.getUniformLocation(shaderProgram, 'uNormalMatrix'),
-      uSampler: gl.getUniformLocation(shaderProgram, 'uSampler'),
-    }
-  };
-
-  // Here's where we call the routine that builds all the
-  // objects we'll be drawing.
-  const buffers = initBuffers(gl);
-
-  const texture = loadTexture(gl, 'texture.jpg');
-
-  var then = 0;
-
-  // Draw the scene repeatedly
-  function render(now) {
-    now *= 0.001;  // convert to seconds
-    const deltaTime = now - then;
-    then = now;
-
-    drawScene(gl, programInfo, buffers, texture, deltaTime);
-
-    requestAnimationFrame(render);
-  }
-  requestAnimationFrame(render);
-}
-
+/*
 //
 // initBuffers
 //
@@ -462,56 +464,6 @@ function initBuffers(gl) {
   };
 }
 
-//
-// Initialize a texture and load an image.
-// When the image finished loading copy it into the texture.
-//
-function loadTexture(gl, url) {
-  const texture = gl.createTexture();
-  gl.bindTexture(gl.TEXTURE_2D, texture);
-
-  // Because images have to be download over the internet
-  // they might take a moment until they are ready.
-  // Until then put a single pixel in the texture so we can
-  // use it immediately. When the image has finished downloading
-  // we'll update the texture with the contents of the image.
-  const level = 0;
-  const internalFormat = gl.RGBA;
-  const width = 1;
-  const height = 1;
-  const border = 0;
-  const srcFormat = gl.RGBA;
-  const srcType = gl.UNSIGNED_BYTE;
-  const pixel = new Uint8Array([0, 0, 255, 255]);  // opaque blue
-  gl.texImage2D(gl.TEXTURE_2D, level, internalFormat,
-                width, height, border, srcFormat, srcType,
-                pixel);
-
-  const image = new Image();
-  image.onload = function() {
-    gl.bindTexture(gl.TEXTURE_2D, texture);
-    gl.texImage2D(gl.TEXTURE_2D, level, internalFormat,
-                  srcFormat, srcType, image);
-
-    // WebGL1 has different requirements for power of 2 images
-    // vs non power of 2 images so check if the image is a
-    // power of 2 in both dimensions.
-    if (isPowerOf2(image.width) && isPowerOf2(image.height)) {
-       // Yes, it's a power of 2. Generate mips.
-       gl.generateMipmap(gl.TEXTURE_2D);
-    } else {
-       // No, it's not a power of 2. Turn of mips and set
-       // wrapping to clamp to edge
-       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    }
-  };
-  image.src = url;
-
-  return texture;
-}
-
 function isPowerOf2(value) {
   return (value & (value - 1)) == 0;
 }
@@ -677,53 +629,30 @@ function drawScene(gl, programInfo, buffers, texture, deltaTime) {
 
   cubeRotation += deltaTime;
 }
+*/
 
 //
-// Initialize a shader program, so WebGL knows how to draw our data
+// main
+// all classes(functions) define as well
 //
-function initShaderProgram(gl, vsSource, fsSource) {
-  const vertexShader = loadShader(gl, gl.VERTEX_SHADER, vsSource);
-  const fragmentShader = loadShader(gl, gl.FRAGMENT_SHADER, fsSource);
+(function(){
+  // start drawing
+  const canvas = document.querySelector('#glcanvas');
+  const gl = canvas.getContext('webgl');
 
-  // Create the shader program
+  const loader = new GltfLoader();
+  const renderer = new GltfRenderer();
+  const vsSource = document.getElementById('vertex-shader').innerText;
+  const fsSource = document.getElementById('fragment-shader').innerText;
 
-  const shaderProgram = gl.createProgram();
-  gl.attachShader(shaderProgram, vertexShader);
-  gl.attachShader(shaderProgram, fragmentShader);
-  gl.linkProgram(shaderProgram);
-
-  // If creating the shader program failed, alert
-
-  if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
-    alert('Unable to initialize the shader program: ' + gl.getProgramInfoLog(shaderProgram));
-    return null;
-  }
-
-  return shaderProgram;
-}
-
-//
-// creates a shader of the given type, uploads the source and
-// compiles it.
-//
-function loadShader(gl, type, source) {
-  const shader = gl.createShader(type);
-
-  // Send the source to the shader object
-
-  gl.shaderSource(shader, source);
-
-  // Compile the shader program
-
-  gl.compileShader(shader);
-
-  // See if it compiled successfully
-
-  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-    alert('An error occurred compiling the shaders: ' + gl.getShaderInfoLog(shader));
-    gl.deleteShader(shader);
-    return null;
-  }
-
-  return shader;
-}
+  // attach HTML events
+  dropdown.addEventListener('change', async (evt) => {
+    const opts = evt.target.options;
+    const idx = evt.target.selectedIndex;
+    const url = opts[idx].value;
+    if (url) {
+      const gltf = await loader.load(new URL(url, KhronosURL).href);
+      renderer.runShaderProgram(gl, gltf, vsSource, fsSource);
+    }
+  });
+})();
