@@ -190,6 +190,8 @@ GltfRenderer.prototype.runShaderProgram = function (gl, gltf, vsSource, fsSource
     }
   };
 
+  gltf.textures = this.initTextures(gl, gltf);
+
   this.drawScene(gl, programInfo, gltf);
 
   // var then = 0;
@@ -207,11 +209,9 @@ GltfRenderer.prototype.runShaderProgram = function (gl, gltf, vsSource, fsSource
   // requestAnimationFrame(render);
 };
 
-GltfRenderer.prototype.initBuffers = async function (gl, gltf) {
+GltfRenderer.prototype.initTextures = async function (gl, gltf) {
   const self = this;
-
-  // textures
-  const textures = await Promise.all(gltf.textures.map((texture) => {
+  return await Promise.all(gltf.textures.map((texture) => {
     let uri = null;
     if (texture.source !== undefined) {
       uri = gltf.images[texture.source].uri;
@@ -224,10 +224,6 @@ GltfRenderer.prototype.initBuffers = async function (gl, gltf) {
     texture._texture = self.loadTexture(gl, url.href, sampler);
     return texture;
   }));
-
-  return {
-    textures: textures
-  };
 };
 
 GltfRenderer.prototype.loadTexture = function (gl, url, sampler) {
@@ -259,18 +255,10 @@ GltfRenderer.prototype.loadTexture = function (gl, url, sampler) {
     gl.texImage2D(gl.TEXTURE_2D, level, internalFormat,
                   srcFormat, srcType, image);
 
-    if (sampler.wrapS) {
-      gl.texParameteri(gl.TEXTURE_2D, sampler.wrapS, gl.CLAMP_TO_EDGE);
-    } else {
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
-    }
-    if (sampler.wrapT) {
-      gl.texParameteri(gl.TEXTURE_2D, sampler.wrapT, gl.CLAMP_TO_EDGE);
-    } else {
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
-    }
-    gl.texParameteri(gl.TEXTURE_2D, sampler.minFilter || gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, sampler.magFilter || gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, sampler.wrapS || gl.REPEAT);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, sampler.wrapT || gl.REPEAT);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, sampler.minFilter || gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, sampler.magFilter || gl.LINEAR);
   };
   image.src = url;
 
