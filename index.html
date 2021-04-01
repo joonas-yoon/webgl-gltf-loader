@@ -13,7 +13,15 @@
 
   <body>
     <div class="container">
-      <canvas id="glcanvas" width="1280" height="720"></canvas>
+      <div style="position: relative;">
+        <canvas id="glcanvas" width="1280" height="720"></canvas>
+        <div class="loading-overlay">
+          <div class="loading-bar" id="loading-bar">
+            <div class="bar"></div>
+            <div class="message">Loading...</div>
+          </div>
+        </div>
+      </div>
 
       <select id="gltf-samples" class="dropdown">
         <option value="">-</option>

@@ -8,14 +8,14 @@ body {
 }
 #glcanvas {
   width: 100%;
-  border: 1px solid rgba(255,255,255,.5);
+  /* border: 1px solid rgba(255,255,255,.5); */
   box-sizing: border-box;
 }
 .container {
   width: 100%;
   max-width: 1080px;
   margin: 0 auto;
-  padding: 3em 0;
+  padding: 3em 1em;
   box-sizing: border-box;
 }
 a {
@@ -26,4 +26,45 @@ a:hover {
 }
 select.dropdown {
   padding: 0.3em 0.6em;
+}
+.loading-overlay {
+  display: none;
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding: 1rem;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  z-index: 2;
+}
+.loading-overlay.active {
+  display: flex;
+}
+.loading-overlay > .loading-bar {
+  position: relative;
+  width: 100%;
+  height: 16px;
+  background-color: white;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.loading-overlay > .loading-bar > .bar {
+  position: relative;
+  display: block;
+  background-color: #19B5FE;
+  width: 10%;
+  height: 100%;
+  -webkit-transition: width 400ms;
+  transition: width 400ms;
+}
+.loading-overlay > .loading-bar > .message {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  font-size: 10px;
+  text-align: center;
 }

@@ -53,6 +53,10 @@ class GLTFCommon {
   }
 }
 
+function sleep(t){
+  return new Promise(resolve=>setTimeout(resolve,t));
+}
+
 class GLTFLoader extends GLTFCommon {
 
   static get Node() {
@@ -98,17 +102,18 @@ class GLTFLoader extends GLTFCommon {
       if (hasReject) reject('Unsupported or Bad glTF file format');
       return undefined;
     }
+    this.gltf.baseURL = new URL(url, location.href);
+    console.log('get json', this.json);
 
     // const node = new GLTFLoader.Node();
     
+    await sleep(500);
     if (hasProgress) progress(0.1, 'reconstruct json');
     const self = this;
     const gl = this.gl;
-
-    this.baseURL = new URL(url, location.href);
-    this.gltf.baseURL = this.baseURL;
     
     // nodes
+    await sleep(500);
     if (hasProgress) progress(0.1, 'reconstruct json (nodes)');
     this.gltf.nodes = await Promise.all(this.gltf.nodes.map((node) => {
       return new GLTFLoader.Node(node);
@@ -124,14 +129,16 @@ class GLTFLoader extends GLTFCommon {
     console.log('Nodes', this.gltf.nodes);
 
     // buffers
+    await sleep(500);
     if (hasProgress) progress(0.2, 'reconstruct json (buffers)');
     this.gltf.buffers = await Promise.all(this.gltf.buffers.map((buffer) => {
-      const url = new URL(buffer.uri, self.baseURL.href);
+      const url = new URL(buffer.uri, self.gltf.baseURL.href);
       return GLTFLoader.loadData(url.href, 'arraybuffer');
     }));
     console.log('Buffer', this.gltf.buffers);
     
     // buffer views
+    await sleep(500);
     if (hasProgress) progress(0.3, 'reconstruct json (buffer views)');
     this.gltf.bufferViews = await Promise.all(this.gltf.bufferViews.map((bufferView) => {
       bufferView._view = new DataView(
@@ -145,6 +152,7 @@ class GLTFLoader extends GLTFCommon {
     console.log('Buffer View', this.gltf.bufferViews);
 
     // accessors
+    await sleep(500);
     if (hasProgress) progress(0.4, 'reconstruct json (accessors)');
     this.gltf.accessors = await Promise.all(this.gltf.accessors.map((accessor) => {
       const view = self.gltf.bufferViews[accessor.bufferView];
@@ -157,7 +165,8 @@ class GLTFLoader extends GLTFCommon {
     console.log('Accessor', this.gltf.accessors);
 
     // textures
-    if (hasProgress) progress(0.4, 'reconstruct json (textures)');
+    await sleep(500);
+    if (hasProgress) progress(0.7, 'reconstruct json (textures)');
     this.gltf.textures = await Promise.all(this.gltf.textures.map((texture) => {
       let uri = null;
       if (texture.source !== undefined) {
@@ -167,12 +176,18 @@ class GLTFLoader extends GLTFCommon {
       if (texture.sampler !== undefined) {
         sampler = self.gltf.samplers[texture.sampler];
       }
-      const url = new URL(uri, self.baseURL);
+      const url = new URL(uri, self.gltf.baseURL);
       texture.glTexture = GLTFLoader.createTexture(gl, url.href, sampler);
       return texture;
     }));
     
+    await sleep(500);
+    if (hasProgress) progress(0.9, 'precompleted');
+
+    await sleep(500);
     if (hasProgress) progress(1.0, 'completed');
+
+    await sleep(200);
     if (hasResponse) response(this.gltf);
     return this.gltf;
   }
@@ -267,12 +282,11 @@ class GLTFRenderer extends GLTFCommon {
 
   drawScene(programInfo) {
     const gl = this.gl;
-
-    gl.clearColor(0.0, 0.0, 0.0, 1.0);  // Clear to black, fully opaque
+    
     gl.clearDepth(1.0);                 // Clear everything
+    gl.clearColor(0.0, 0.0, 0.0, 1.0);  // Clear to black, fully opaque
     gl.enable(gl.DEPTH_TEST);           // Enable depth testing
     gl.depthFunc(gl.LEQUAL);            // Near things obscure far things
-  
     // Clear the canvas before we start drawing on it.
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
@@ -299,7 +313,7 @@ class GLTFRenderer extends GLTFCommon {
     
     var fragCode =
       'void main(void) {' +
-          'gl_FragColor = vec4(0.0, 0.0, 0.0, 0.1);' +
+          'gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0);' +
       '}';
 
     var fragShader = gl.createShader(gl.FRAGMENT_SHADER);
@@ -319,7 +333,7 @@ class GLTFRenderer extends GLTFCommon {
     gl.enableVertexAttribArray(coord);
 
     /*============ Drawing the triangle =============*/
-    gl.clearColor(0.5, 0.5, 0.5, 0.9);
+    gl.clearColor(0.0, 0.0, 0.0, 1.0);
     gl.enable(gl.DEPTH_TEST);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     gl.viewport(0, 0, canvas.width, canvas.height);
@@ -337,24 +351,59 @@ class GLTFRenderer extends GLTFCommon {
   const canvas = document.querySelector('#glcanvas');
   const gl = canvas.getContext('webgl');
 
-  const loader = new GLTFLoader(gl);
-  loader.setBaseURL(KhronosURL);
-  loader.load('BoxTextured/glTF/BoxTextured.gltf', console.log, console.info, console.error);
-  
+  const loadingBar = document.getElementById('loading-bar');
+  const loadingContainer = loadingBar.parentNode;
+  const dropdown = document.getElementById('gltf-samples');
+
+  function onResize() {
+    loadingContainer.style.height = canvas.clientHeight + 'px';
+  }
+
+  window.addEventListener('resize', onResize);
+
+  function onReady() {
+    loadingContainer.classList.add('active');
+    dropdown.setAttribute('disabled', true);
+  }
+
+  function onLoaded() {
+    loadingContainer.classList.remove('active');
+    dropdown.removeAttribute('disabled');
+  }
+
+  function onProcess(percentage, message) {
+    console.info((100 * percentage) + '%', message);
+    loadingBar.querySelector('.bar').style.width = (100 * percentage) + '%';
+    loadingBar.querySelector('.message').innerText = message || 'Loading...';
+  }
+
+  onResize();
+
   const renderer = new GLTFRenderer(gl);
   // const vsSource = document.getElementById('vertex-shader').innerText;
   // const fsSource = document.getElementById('fragment-shader').innerText;
-  renderer.drawScene();
+  const loader = new GLTFLoader(gl);
+  loader.setBaseURL(KhronosURL);
+
+  loadAndDrawGLTF('BoxTextured/glTF/BoxTextured.gltf');
+
+  function loadAndDrawGLTF(url) {
+    onReady();
+    loader.load(url, (gltf) => {
+      onLoaded();
+      renderer.drawScene();
+      console.log(gltf);
+    }, onProcess, console.error);
+  }
 
   // attach HTML events
-  const dropdown = document.getElementById('gltf-samples');
-  dropdown.addEventListener('change', async (evt) => {
+  dropdown.addEventListener('change', (evt) => {
     const opts = evt.target.options;
     const idx = evt.target.selectedIndex;
     const url = opts[idx].value;
     if (url) {
-      loader.load(url, console.log, console.info, console.error);
-      // renderer.runShaderProgram(gl, gltf, vsSource, fsSource);
+      console.log(url);
+      loadAndDrawGLTF(url);
     }
   });
 })();
