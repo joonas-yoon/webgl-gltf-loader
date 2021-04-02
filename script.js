@@ -556,6 +556,8 @@ class GLTFRenderer extends GLTFCommon {
     super(gl);
 
     this.program = GLTFRenderer.createProgram(gl, vertexShaderCode, fragmentShaderCode);
+
+    this.zoom = -6;
   }
 
   static get MeshRenderer() {
@@ -568,7 +570,12 @@ class GLTFRenderer extends GLTFCommon {
     };
   }
 
+  setZoom(zoom) {
+    this.zoom = zoom;
+  }
+
   draw(gltf) {
+    const self = this;
     const gl = this.gl;
     const canvas = gl.canvas;
 
@@ -588,7 +595,7 @@ class GLTFRenderer extends GLTFCommon {
 
     /*==================== MATRIX =====================*/
 
-    function get_projection(angle, a, zMin, zMax) {
+    function getProjection(angle, a, zMin, zMax) {
       var ang = Math.tan((angle*.5)*Math.PI/180);//angle*.5
       return [
           0.5/ang, 0 , 0, 0,
@@ -598,12 +605,9 @@ class GLTFRenderer extends GLTFCommon {
       ];
     }
 
-    var projMatrix = get_projection(40, canvas.width/canvas.height, 1, 100);
+    var projMatrix = getProjection(40, canvas.width/canvas.height, 1, 100);
     var modelMatrix = Mat4.IdentityMatrix;
     var viewMatrix = Mat4.IdentityMatrix;
-
-    viewMatrix = Mat4.translate(viewMatrix, 0, 0, -6);
-    modelMatrix = Mat4.scale(modelMatrix, 50, 50, 50);
 
     /*================= Drawing ===========================*/
     var time_old = 0;
@@ -616,6 +620,8 @@ class GLTFRenderer extends GLTFCommon {
       Mat4.rotateX(modelMatrix, dt * 0.0003);
       time_old = time;
       
+      const vmat = Mat4.translate(viewMatrix, 0, 0, self.zoom);
+      
       // const normalMatrix = Mat4.transpose(Mat4.inverse(Mat4.multiplyMM(viewMatrix, modelMatrix)));
       // gl.uniformMatrix4fv(Nmatrix, false, normalMatrix);
 
@@ -623,7 +629,7 @@ class GLTFRenderer extends GLTFCommon {
       GLTFRenderer.clear(gl);
 
       gl.uniformMatrix4fv(Pmatrix, false, projMatrix);
-      gl.uniformMatrix4fv(Vmatrix, false, viewMatrix);
+      gl.uniformMatrix4fv(Vmatrix, false, vmat);
       gl.uniformMatrix4fv(Mmatrix, false, modelMatrix);
 
       GLTFRenderer.drawScene(gl, shaderProgram, gltf);
@@ -839,4 +845,50 @@ class GLTFRenderer extends GLTFCommon {
       loadAndDrawGLTF(url);
     }
   });
+
+  {
+    var dragLeft = false, dragMiddle = false, dragRight = false;
+    var oldX, oldY, deltaX, deltaY;
+
+    canvas.addEventListener('mousedown', (evt) => {
+      evt.preventDefault();
+      switch (evt.which) {
+        case 1: dragLeft = true; break;
+        case 2: dragMiddle = true; break;
+        case 3: dragRight = true; break;
+        default: break;
+      }
+      oldX = evt.clientX, oldY = evt.clientY;
+    });
+
+    canvas.addEventListener('mouseup', (evt) => {
+      evt.preventDefault();
+      switch (evt.which) {
+        case 1: dragLeft = false; break;
+        case 2: dragMiddle = false; break;
+        case 3: dragRight = false; break;
+        default: break;
+      }
+      oldX = evt.clientX, oldY = evt.clientY;
+    });
+    
+    canvas.addEventListener('mousemove', (evt) => {
+      const x = evt.clientX, y = evt.clientY;
+      const dx = x - deltaX, dy = y - deltaY;
+      if (dragLeft) {
+
+      }
+      if (dragRight) {
+        renderer.setZoom(renderer.zoom + dy / 100.);
+      }
+      if (dragMiddle) {
+      }
+      deltaX = x, deltaY = y;
+    });
+
+    // disable context menu for right click event
+    canvas.addEventListener('contextmenu', (evt) => {
+      evt.preventDefault();
+    })
+  }
 })();

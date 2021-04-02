@@ -4,6 +4,7 @@ html, body {
   overflow: hidden;
 }
 body {
+  color: white;
   background-color: black;
 }
 #glcanvas {
