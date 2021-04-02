@@ -361,6 +361,9 @@ class GLTFLoader extends GLTFCommon {
     const hasResponse = typeof response === 'function';
     const hasReject = typeof reject === 'function';
 
+    if (hasProgress) progress(0.0, 'initialize');
+    await this.unload();
+
     if (hasProgress) progress(0.0, 'load data from url');
     url = new URL(url, this.baseURL).href;
     this.json = await GLTFLoader.loadData(url, 'json');
@@ -371,8 +374,6 @@ class GLTFLoader extends GLTFCommon {
     }
     this.gltf.baseURL = new URL(url, location.href);
     console.log('get json', this.json);
-
-    // const node = new GLTFLoader.Node();
     
     if (hasProgress) progress(0.1, 'reconstruct json');
     const self = this;
@@ -455,6 +456,30 @@ class GLTFLoader extends GLTFCommon {
     if (hasResponse) response(this.gltf);
     return this.gltf;
   }
+
+  // delete all buffers
+  async unload() {
+    const gl = this.gl;
+    const gltf = this.gltf;
+
+    if (!gltf) return;
+
+    // accessors
+    await Promise.all(gltf.accessors.map((accessor) => {
+      gl.deleteBuffer(accessor.glBuffer);
+      return accessor;
+    }));
+
+    if (gltf.textures) {
+      await Promise.all(gltf.textures.map((texture) => {
+        gl.deleteTexture(texture.glTexture);
+        return texture;
+      }));
+    }
+
+    this.json = {};
+    this.gltf = {};
+  }
   
   static async loadData(url, dataType) {
     return new Promise((resolve, reject) => {
@@ -524,6 +549,12 @@ class GLTFLoader extends GLTFCommon {
 
 class GLTFRenderer extends GLTFCommon {
 
+  constructor(gl, vertexShaderCode, fragmentShaderCode) {
+    super(gl);
+
+    this.program = GLTFRenderer.createProgram(gl, vertexShaderCode, fragmentShaderCode);
+  }
+
   static get MeshRenderer() {
     return class MeshRenderer {
       constructor(mesh) {
@@ -557,11 +588,7 @@ class GLTFRenderer extends GLTFCommon {
     var indexBuffer = GLTFLoader.createArrayBuffer(gl, _indices.typedArray, gl.ELEMENT_ARRAY_BUFFER);
 
     /*=================== Shaders =========================*/
-
-    var vertCode = document.getElementById('vertex-shader').innerText;
-    var fragCode = document.getElementById('fragment-shader').innerText;
-
-    var shaderProgram = GLTFRenderer.createProgram(gl, vertCode, fragCode);
+    const shaderProgram = this.program;
     gl.linkProgram(shaderProgram);
     gl.useProgram(shaderProgram);
 
@@ -641,8 +668,8 @@ class GLTFRenderer extends GLTFCommon {
 
     /*================= Drawing ===========================*/
     var time_old = 0;
-
     var animate = function(time) {
+      gl.useProgram(shaderProgram);
 
       var dt = time - time_old;
       Mat4.rotateZ(modelMatrix, dt * 0.0001);
@@ -734,14 +761,12 @@ class GLTFRenderer extends GLTFCommon {
 
   onResize();
 
-  const renderer = new GLTFRenderer(gl);
-  // const vsSource = document.getElementById('vertex-shader').innerText;
-  // const fsSource = document.getElementById('fragment-shader').innerText;
   const loader = new GLTFLoader(gl);
   loader.setBaseURL(KhronosURL);
 
-  // loadAndDrawGLTF('BoxTextured/glTF/BoxTextured.gltf');
-  loadAndDrawGLTF('Avocado/glTF/Avocado.gltf');
+  const vsSource = document.getElementById('vertex-shader').innerText;
+  const fsSource = document.getElementById('fragment-shader').innerText;
+  const renderer = new GLTFRenderer(gl, vsSource, fsSource);
 
   function loadAndDrawGLTF(url) {
     onReady();
