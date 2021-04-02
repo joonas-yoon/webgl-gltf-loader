@@ -508,24 +508,27 @@ class GLTFLoader extends GLTFCommon {
     gl.bufferData(target || gl.ARRAY_BUFFER, usage || array, gl.STATIC_DRAW);
     return buffer;
   }
+  
+  static createEmptyTexture(gl, r, g, b, a) {
+    const texture = gl.createTexture();
+    const pixel = new Uint8Array([
+      Math.floor(r * 255), Math.floor(g * 255), Math.floor(b * 255), Math.floor(a * 255)
+    ]);
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+    gl.bindTexture(gl.TEXTURE_2D, null);
+    return texture;
+  }
 
   static createTexture(gl, url, sampler) {
     sampler = sampler || {};
   
-    const texture = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, texture);
-
+    const texture = this.createEmptyTexture(gl, 0, 0, 1, 1);
+    
     const level = 0;
     const internalFormat = gl.RGBA;
-    const width = 1;
-    const height = 1;
-    const border = 0;
     const srcFormat = gl.RGBA;
     const srcType = gl.UNSIGNED_BYTE;
-    const pixel = new Uint8Array([0, 0, 255, 255]);  // opaque blue
-    gl.texImage2D(gl.TEXTURE_2D, level, internalFormat,
-                  width, height, border, srcFormat, srcType,
-                  pixel);
   
     const image = new Image();
     image.onload = function() {
@@ -566,26 +569,11 @@ class GLTFRenderer extends GLTFCommon {
   }
 
   draw(gltf) {
-    const node = gltf.nodes[0];
-    console.log(node);
-    const mesh = gltf.meshes[node.mesh];
-    console.log(mesh);
-    const primitive = mesh.primitives[0];
-    const _normals = gltf.accessors[primitive.attributes.NORMAL];
-    const _positions = gltf.accessors[primitive.attributes.POSITION];
-    const _texcoords = gltf.accessors[primitive.attributes.TEXCOORD_0];
-    const _indices = gltf.accessors[primitive.indices];
-    const _material = gltf.materials[primitive.material];
-    console.log('_material', _material);
-    const _texture = gltf.textures[_material.pbrMetallicRoughness.baseColorTexture.index];
-    console.log('_texture', _texture);
-
     const gl = this.gl;
     const canvas = gl.canvas;
 
     /////////////////////////////////////////////////////////////////////////////////////
     // Create and store data into index buffer
-    var indexBuffer = GLTFLoader.createArrayBuffer(gl, _indices.typedArray, gl.ELEMENT_ARRAY_BUFFER);
 
     /*=================== Shaders =========================*/
     const shaderProgram = this.program;
@@ -597,55 +585,6 @@ class GLTFRenderer extends GLTFCommon {
     var Vmatrix = gl.getUniformLocation(shaderProgram, "uViewMatrix");
     var Mmatrix = gl.getUniformLocation(shaderProgram, "uModelMatrix");
     // var Nmatrix = gl.getUniformLocation(shaderProgram, "uNormalMatrix");
-    
-    {
-      // Texture
-      var sampler = gl.getUniformLocation(shaderProgram, "uSampler");
-      gl.activeTexture(gl.TEXTURE0);
-      gl.bindTexture(gl.TEXTURE_2D, _texture.glTexture);
-      gl.uniform1i(sampler, 0);
-    }
-
-    {
-      // Position
-      const index = gl.getAttribLocation(shaderProgram, "aVertexPosition");
-      const size = _positions.byteSize;
-      const type = _positions.componentType;
-      const normalized = _positions.normalized || false;
-      const stride = _positions.byteStride || 0;
-      const offset = _positions.offset || 0;
-      gl.bindBuffer(gl.ARRAY_BUFFER, _positions.glBuffer);
-      gl.vertexAttribPointer(index, size, type, normalized, 0, 0);
-      gl.enableVertexAttribArray(index);
-    }
-
-    {
-      // console.log('normals', _normals);
-      // // Normal
-      // const index = gl.getAttribLocation(shaderProgram, "aVertexNormal");
-      // const size = _normals.byteSize;
-      // const type = _normals.componentType;
-      // const normalized = _normals.normalized || false;
-      // const stride = _normals.byteStride || 0;
-      // const offset = _normals.offset || 0;
-      // gl.bindBuffer(gl.ARRAY_BUFFER, _normals.glBuffer);
-      // gl.bufferData(gl.ARRAY_BUFFER, _normals.typedArray, gl.STATIC_DRAW);
-      // gl.vertexAttribPointer(index, size, type, normalized, 0, 0);
-      // gl.enableVertexAttribArray(index);
-    }
-      
-    {
-      // Texture coords
-      const index = gl.getAttribLocation(shaderProgram, "aTextureCoord");
-      const size = _texcoords.byteSize;
-      const type = _texcoords.componentType;
-      const normalized = _texcoords.normalized || false;
-      const stride = _texcoords.byteStride || 0;
-      const offset = _texcoords.offset || 0;
-      gl.bindBuffer(gl.ARRAY_BUFFER, _texcoords.glBuffer);
-      gl.vertexAttribPointer(index, size, type, normalized, 0, 0);
-      gl.enableVertexAttribArray(index);
-    }
 
     /*==================== MATRIX =====================*/
 
@@ -687,12 +626,125 @@ class GLTFRenderer extends GLTFCommon {
       gl.uniformMatrix4fv(Vmatrix, false, viewMatrix);
       gl.uniformMatrix4fv(Mmatrix, false, modelMatrix);
 
-      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
-      gl.drawElements(primitive.mode || gl.TRIANGLES, _indices.count, gl.UNSIGNED_SHORT, 0);
+      GLTFRenderer.drawScene(gl, shaderProgram, gltf);
 
       window.requestAnimationFrame(animate);
     }
     animate(0);
+  }
+
+  static drawScene(gl, program, gltf) {
+    for (const nodeIndex of gltf.scenes[gltf.scene].nodes) {
+      gltf.nodes[nodeIndex].traverse((node) => {
+        if (node.mesh !== undefined) {
+          GLTFRenderer.drawMesh(gl, program, gltf, gltf.meshes[node.mesh]);
+        }
+      });
+    }
+  }
+
+  static drawMesh(gl, program, gltf, mesh) {
+    gl.useProgram(program);
+    
+    for (const primitive of mesh.primitives) {
+      drawPrimitive(primitive);
+    }
+
+    function bindAttributeAccessor(name, accessor) {
+      const index = gl.getAttribLocation(program, name);
+      const size = accessor.byteSize;
+      const type = accessor.componentType;
+      const normalized = accessor.normalized || false;
+      const stride = accessor.byteStride || 0;
+      const offset = accessor.offset || 0;
+      gl.bindBuffer(gl.ARRAY_BUFFER, accessor.glBuffer);
+      gl.vertexAttribPointer(index, size, type, normalized, 0, 0);
+      return index;
+    }
+
+    function bindAttribute(name, size, type, array) {
+      const index = gl.getAttribLocation(program, name);
+      const buffer = GLTFLoader.createArrayBuffer(gl, array, gl.ARRAY_BUFFER);
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+      gl.vertexAttribPointer(index, size, type, false, 0, 0);
+      return index;
+    }
+
+    function drawPrimitive(primitive) {
+      const positions = gltf.accessors[primitive.attributes.POSITION];
+      
+      // Texture
+      {
+        const material = gltf.materials[primitive.material];
+        var sampler = gl.getUniformLocation(program, "uSampler");
+        gl.activeTexture(gl.TEXTURE0);
+        if (material && material.pbrMetallicRoughness.baseColorTexture !== undefined) {
+          const texture = gltf.textures[material.pbrMetallicRoughness.baseColorTexture.index];
+          gl.bindTexture(gl.TEXTURE_2D, texture.glTexture);
+        } else {
+          const baseColor = material.pbrMetallicRoughness.baseColorFactor || [1, 1, 1, 1];
+          const texture = GLTFLoader.createEmptyTexture(gl, baseColor[0], baseColor[1], baseColor[2], baseColor[3]);
+          gl.bindTexture(gl.TEXTURE_2D, texture);
+        }
+        gl.uniform1i(sampler, 0);
+      }
+
+      {
+        // Position
+        const loc = bindAttributeAccessor("aVertexPosition", positions);
+        gl.enableVertexAttribArray(loc);
+      }
+
+      {
+        // Normal
+        if (primitive.attributes.NORMAL !== undefined) {
+          const normals = gltf.accessors[primitive.attributes.NORMAL];
+          const loc = bindAttributeAccessor("aVertexNormal", normals);
+          gl.enableVertexAttribArray(loc);
+        } else {
+          const loc = gl.getAttribLocation(program, "aVertexNormal");
+          gl.disableVertexAttribArray(loc);
+        }
+      }
+
+      {
+        // Vertex Colors
+        const hasVertexColor = primitive.attributes.COLOR_0 !== undefined;
+        var boolLoc = gl.getUniformLocation(program, "aHasVertexColor");
+        gl.uniform1i(boolLoc, hasVertexColor);
+
+        if (hasVertexColor) {
+          const colors = gltf.accessors[primitive.attributes.COLOR_0];
+          const loc = bindAttributeAccessor("aVertexColor", colors);
+          gl.enableVertexAttribArray(loc);
+        } else {
+          const loc = gl.getAttribLocation(program, "aVertexColor");
+          gl.disableVertexAttribArray(loc);
+        }
+      }
+        
+      {
+        // Texture coords
+        if (primitive.attributes.TEXCOORD_0 !== undefined) {
+          const texcoords = gltf.accessors[primitive.attributes.TEXCOORD_0];
+          const loc = bindAttributeAccessor("aTextureCoord", texcoords);
+          gl.enableVertexAttribArray(loc);
+        } else {
+          const loc = bindAttribute("aTextureCoord", 2, gl.UNSIGNED_SHORT, new Uint16Array([0, 0, 0, 1, 1, 0]));
+          gl.enableVertexAttribArray(loc);
+        }
+      }
+
+      // drawing with order
+      if (primitive.indices !== undefined) {
+        const indices = gltf.accessors[primitive.indices];
+        const indexBuffer = GLTFLoader.createArrayBuffer(gl, indices.typedArray, gl.ELEMENT_ARRAY_BUFFER);
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+        gl.drawElements(primitive.mode || gl.TRIANGLES, indices.count, gl.UNSIGNED_SHORT, 0);
+      } else {
+        gl.drawArrays(primitive.mode || gl.TRIANGLES, positions.count, gl.UNSIGNED_SHORT, 0);
+      }
+    }
   }
 
   static clear(gl) {

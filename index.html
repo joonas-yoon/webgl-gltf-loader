@@ -44,20 +44,28 @@
   
   <script type="x-shader/x-vertex" id="vertex-shader">
     attribute vec4 aVertexPosition;
-    // attribute vec3 aVertexNormal;
+    attribute vec3 aVertexNormal;
     attribute vec2 aTextureCoord;
-
+    attribute vec4 aVertexColor;
+    
+    uniform bool aHasVertexColor;
     // uniform mat4 uNormalMatrix;
     uniform mat4 uModelMatrix;
     uniform mat4 uViewMatrix;
     uniform mat4 uProjectionMatrix;
 
     varying highp vec2 vTextureCoord;
+    varying highp vec4 vVertexColor;
     // varying highp vec3 vLighting;
 
     void main(void) {
       gl_Position = uProjectionMatrix * uViewMatrix * uModelMatrix * aVertexPosition;
       vTextureCoord = aTextureCoord;
+      if (aHasVertexColor) {
+        vVertexColor = aVertexColor;
+      } else {
+        vVertexColor = vec4(1, 1, 1, 1);
+      }
 
       // Apply lighting effect
 
@@ -73,6 +81,7 @@
   </script>
   <script type="x-shader/x-fragment" id="fragment-shader">
     varying highp vec2 vTextureCoord;
+    varying highp vec4 vVertexColor;
     // varying highp vec3 vLighting;
 
     uniform sampler2D uSampler;
@@ -81,8 +90,7 @@
       highp vec4 texelColor = texture2D(uSampler, vTextureCoord);
 
       // gl_FragColor = vec4(texelColor.rgb * vLighting, texelColor.a);
-      gl_FragColor = vec4(texelColor.rgb, 1.0);
-      // gl_FragColor = vec4(1., 1., 0., 1.);
+      gl_FragColor = vec4(texelColor.rgb, 1.0) * vVertexColor;
     }
   </script>
   <script src="script.js" defer></script>
