@@ -1,3 +1,263 @@
+class Mat4 {
+  constructor(mat) {
+    this.a = mat || Mat4.IdentityMatrix;
+  }
+
+  get mat4() { return this.a; }
+  get matrix() { return this.a; }
+
+  static get IdentityMatrix() {
+    return [
+      1, 0, 0, 0,
+      0, 1, 0, 0,
+      0, 0, 1, 0,
+      0, 0, 0, 1
+    ];
+  }
+
+  // point • matrix
+  // https://developer.mozilla.org/en-US/docs/Web/API/WebGL_API/Matrix_math_for_the_web
+  static multiplyMP(matrix, point) {
+    // Give a simple variable name to each part of the matrix, a column and row number
+    let c0r0 = matrix[ 0], c1r0 = matrix[ 1], c2r0 = matrix[ 2], c3r0 = matrix[ 3];
+    let c0r1 = matrix[ 4], c1r1 = matrix[ 5], c2r1 = matrix[ 6], c3r1 = matrix[ 7];
+    let c0r2 = matrix[ 8], c1r2 = matrix[ 9], c2r2 = matrix[10], c3r2 = matrix[11];
+    let c0r3 = matrix[12], c1r3 = matrix[13], c2r3 = matrix[14], c3r3 = matrix[15];
+
+    // Multiply the point against each part of the columns, then add together
+    let x = point[0], y = point[1], z = point[2], w = point[3];
+    let resultX = (x * c0r0) + (y * c0r1) + (z * c0r2) + (w * c0r3);
+    let resultY = (x * c1r0) + (y * c1r1) + (z * c1r2) + (w * c1r3);
+    let resultZ = (x * c2r0) + (y * c2r1) + (z * c2r2) + (w * c2r3);
+    let resultW = (x * c3r0) + (y * c3r1) + (z * c3r2) + (w * c3r3);
+
+    return [resultX, resultY, resultZ, resultW];
+  }
+
+  // matrixA • matrixB
+  static multiplyMM(matrixA, matrixB) {
+    // Slice the second matrix up into rows
+    let row0 = [matrixA[ 0], matrixA[ 1], matrixA[ 2], matrixA[ 3]];
+    let row1 = [matrixA[ 4], matrixA[ 5], matrixA[ 6], matrixA[ 7]];
+    let row2 = [matrixA[ 8], matrixA[ 9], matrixA[10], matrixA[11]];
+    let row3 = [matrixA[12], matrixA[13], matrixA[14], matrixA[15]];
+
+    // Multiply each row by matrixA
+    let result0 = Mat4.multiplyMP(matrixB, row0);
+    let result1 = Mat4.multiplyMP(matrixB, row1);
+    let result2 = Mat4.multiplyMP(matrixB, row2);
+    let result3 = Mat4.multiplyMP(matrixB, row3);
+
+    // Turn the result rows back into a single matrix
+    return [
+      result0[0], result0[1], result0[2], result0[3],
+      result1[0], result1[1], result1[2], result1[3],
+      result2[0], result2[1], result2[2], result2[3],
+      result3[0], result3[1], result3[2], result3[3]
+    ];
+  }
+
+  static translate(mat, x, y, z) {
+    let translationMatrix = [
+      1,    0,    0,   0,
+      0,    1,    0,   0,
+      0,    0,    1,   0,
+      x,    y,    z,   1
+    ];
+    return Mat4.multiplyMM(mat, translationMatrix);
+  }
+  
+  static scale(mat, x, y, z) {
+    let scaleMatrix  = [
+      x,    0,    0,   0,
+      0,    y,    0,   0,
+      0,    0,    z,   0,
+      0,    0,    0,   1
+    ];
+    return Mat4.multiplyMM(mat, scaleMatrix);
+  }
+
+  // https://graphics.stanford.edu/~mdfisher/Code/Engine/Matrix4.cpp.html
+  static rotate(m, x, y, z, angle) {
+    let sin = Math.sin, cos = Math.cos;
+    
+    let c = cos(angle);
+    let s = sin(angle);
+    let t = 1.0 - c;
+
+    function normalize(v) {
+      v[0] /= Math.sqrt(m[0]*m[0], m[1]*m[1], m[2]*m[2]);
+      v[1] /= Math.sqrt(m[0]*m[0], m[1]*m[1], m[2]*m[2]);
+      v[2] /= Math.sqrt(m[0]*m[0], m[1]*m[1], m[2]*m[2]);
+      return v;
+    }
+
+    const nv = normalize([x, y, z]);
+    x = nv[0], y = nv[1], z = nv[2];
+    return [
+      1 + t*(x*x-1),   z*s+t*x*y,   -y*s+t*x*z, 0.0,
+         -z*s+t*x*y, 1+t*(y*y-1),    x*s+t*y*z, 0.0,
+          y*s+t*x*z,   -x*s+t*y*z, 1+t*(z*z-1), 0.0,
+                0.0,          0.0,         0.0, 1.0
+    ];
+  }
+
+  static rotateZ(m, angle) {
+    var c = Math.cos(angle);
+    var s = Math.sin(angle);
+    var mv0 = m[0], mv4 = m[4], mv8 = m[8];
+
+    m[0] = c*m[0]-s*m[1];
+    m[4] = c*m[4]-s*m[5];
+    m[8] = c*m[8]-s*m[9];
+
+    m[1]=c*m[1]+s*mv0;
+    m[5]=c*m[5]+s*mv4;
+    m[9]=c*m[9]+s*mv8;
+
+    return m;
+  }
+
+  static rotateX(m, angle) {
+    var c = Math.cos(angle);
+    var s = Math.sin(angle);
+    var mv1 = m[1], mv5 = m[5], mv9 = m[9];
+
+    m[1] = m[1]*c-m[2]*s;
+    m[5] = m[5]*c-m[6]*s;
+    m[9] = m[9]*c-m[10]*s;
+
+    m[2] = m[2]*c+mv1*s;
+    m[6] = m[6]*c+mv5*s;
+    m[10] = m[10]*c+mv9*s;
+
+    return m;
+  }
+
+  static rotateY(m, angle) {
+    var c = Math.cos(angle);
+    var s = Math.sin(angle);
+    var mv0 = m[0], mv4 = m[4], mv8 = m[8];
+
+    m[0] = c*m[0]+s*m[2];
+    m[4] = c*m[4]+s*m[6];
+    m[8] = c*m[8]+s*m[10];
+
+    m[2] = c*m[2]-s*mv0;
+    m[6] = c*m[6]-s*mv4;
+    m[10] = c*m[10]-s*mv8;
+
+    return m;
+  }
+
+  // https://graphics.stanford.edu/~mdfisher/Code/Engine/Matrix4.cpp.html
+  static inverse(m) {
+    //
+    // Inversion by Cramer's rule.  Code taken from an Intel publication
+    //
+    let result = Mat4.IdentityMatrix;
+    let tmp = Mat4.IdentityMatrix; /* temp array for pairs */
+    let src = Mat4.IdentityMatrix; /* array of transpose source matrix */
+    let det; /* determinant */
+    /* transpose matrix */
+    for (let i = 0; i < 4; i++) {
+        src[i + 0 ] = m[i * 4 + 0];
+        src[i + 4 ] = m[i * 4 + 1];
+        src[i + 8 ] = m[i * 4 + 2];
+        src[i + 12] = m[i * 4 + 3];
+    }
+    /* calculate pairs for first 8 elements (cofactors) */
+    tmp[0] = src[10] * src[15];
+    tmp[1] = src[11] * src[14];
+    tmp[2] = src[9] * src[15];
+    tmp[3] = src[11] * src[13];
+    tmp[4] = src[9] * src[14];
+    tmp[5] = src[10] * src[13];
+    tmp[6] = src[8] * src[15];
+    tmp[7] = src[11] * src[12];
+    tmp[8] = src[8] * src[14];
+    tmp[9] = src[10] * src[12];
+    tmp[10] = src[8] * src[13];
+    tmp[11] = src[9] * src[12];
+    /* calculate first 8 elements (cofactors) */
+    result[0*4+0] = tmp[0]*src[5] + tmp[3]*src[6] + tmp[4]*src[7];
+    result[0*4+0] -= tmp[1]*src[5] + tmp[2]*src[6] + tmp[5]*src[7];
+    result[0*4+1] = tmp[1]*src[4] + tmp[6]*src[6] + tmp[9]*src[7];
+    result[0*4+1] -= tmp[0]*src[4] + tmp[7]*src[6] + tmp[8]*src[7];
+    result[0*4+2] = tmp[2]*src[4] + tmp[7]*src[5] + tmp[10]*src[7];
+    result[0*4+2] -= tmp[3]*src[4] + tmp[6]*src[5] + tmp[11]*src[7];
+    result[0*4+3] = tmp[5]*src[4] + tmp[8]*src[5] + tmp[11]*src[6];
+    result[0*4+3] -= tmp[4]*src[4] + tmp[9]*src[5] + tmp[10]*src[6];
+    result[1*4+0] = tmp[1]*src[1] + tmp[2]*src[2] + tmp[5]*src[3];
+    result[1*4+0] -= tmp[0]*src[1] + tmp[3]*src[2] + tmp[4]*src[3];
+    result[1*4+1] = tmp[0]*src[0] + tmp[7]*src[2] + tmp[8]*src[3];
+    result[1*4+1] -= tmp[1]*src[0] + tmp[6]*src[2] + tmp[9]*src[3];
+    result[1*4+2] = tmp[3]*src[0] + tmp[6]*src[1] + tmp[11]*src[3];
+    result[1*4+2] -= tmp[2]*src[0] + tmp[7]*src[1] + tmp[10]*src[3];
+    result[1*4+3] = tmp[4]*src[0] + tmp[9]*src[1] + tmp[10]*src[2];
+    result[1*4+3] -= tmp[5]*src[0] + tmp[8]*src[1] + tmp[11]*src[2];
+    /* calculate pairs for second 8 elements (cofactors) */
+    tmp[0] = src[2]*src[7];
+    tmp[1] = src[3]*src[6];
+    tmp[2] = src[1]*src[7];
+    tmp[3] = src[3]*src[5];
+    tmp[4] = src[1]*src[6];
+    tmp[5] = src[2]*src[5];
+    tmp[6] = src[0]*src[7];
+    tmp[7] = src[3]*src[4];
+    tmp[8] = src[0]*src[6];
+    tmp[9] = src[2]*src[4];
+    tmp[10] = src[0]*src[5];
+    tmp[11] = src[1]*src[4];
+    /* calculate second 8 elements (cofactors) */
+    result[2*4+0] = tmp[0]*src[13] + tmp[3]*src[14] + tmp[4]*src[15];
+    result[2*4+0] -= tmp[1]*src[13] + tmp[2]*src[14] + tmp[5]*src[15];
+    result[2*4+1] = tmp[1]*src[12] + tmp[6]*src[14] + tmp[9]*src[15];
+    result[2*4+1] -= tmp[0]*src[12] + tmp[7]*src[14] + tmp[8]*src[15];
+    result[2*4+2] = tmp[2]*src[12] + tmp[7]*src[13] + tmp[10]*src[15];
+    result[2*4+2] -= tmp[3]*src[12] + tmp[6]*src[13] + tmp[11]*src[15];
+    result[2*4+3] = tmp[5]*src[12] + tmp[8]*src[13] + tmp[11]*src[14];
+    result[2*4+3] -= tmp[4]*src[12] + tmp[9]*src[13] + tmp[10]*src[14];
+    result[3*4+0] = tmp[2]*src[10] + tmp[5]*src[11] + tmp[1]*src[9];
+    result[3*4+0] -= tmp[4]*src[11] + tmp[0]*src[9] + tmp[3]*src[10];
+    result[3*4+1] = tmp[8]*src[11] + tmp[0]*src[8] + tmp[7]*src[10];
+    result[3*4+1] -= tmp[6]*src[10] + tmp[9]*src[11] + tmp[1]*src[8];
+    result[3*4+2] = tmp[6]*src[9] + tmp[11]*src[11] + tmp[3]*src[8];
+    result[3*4+2] -= tmp[10]*src[11] + tmp[2]*src[8] + tmp[7]*src[9];
+    result[3*4+3] = tmp[10]*src[10] + tmp[4]*src[8] + tmp[9]*src[9];
+    result[3*4+3] -= tmp[8]*src[9] + tmp[11]*src[10] + tmp[5]*src[8];
+    /* calculate determinant */
+    det=src[0]*result[0]+src[1]*result[1]+src[2]*result[2]+src[3]*result[3];
+    /* calculate matrix inverse */
+    det = 1.0 / det;
+    
+    for (let i = 0; i < 16; i++) result[i] *= det;
+    return result;
+  }
+
+  static transpose(m) {
+    const result = Mat4.IdentityMatrix;
+    for(let i = 0; i < 4; i++) {
+      for(let i2 = 0; i2 < 4; i2++) {
+        result[i2 * 4 + i] = m[i * 4 + i2];
+      }
+    }
+    return result;
+  }
+
+  // test
+  test() {
+    console.assert(
+      Mat4.multiplyMP(Mat4.IdentityMatrix, [4,3,2,1]).toString()
+       == [4,3,2,1].toString()
+    );
+    console.assert(
+      Mat4.translate(Mat4.IdentityMatrix, 50, 100, 0).toString()
+       == [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 50, 100, 0, 1].toString()
+    );
+  }
+}
+
 class GLTFCommon {
   constructor(gl) {
     this.baseURL = location.href;
