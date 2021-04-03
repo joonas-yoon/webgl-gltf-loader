@@ -559,6 +559,7 @@ class GLTFRenderer extends GLTFCommon {
 
     this.scale = 1.0;
     this.rotate = [0, 0, 0]; // not quarterion, angle around XYZ axis
+    this.cameraPosition = [0.0, 0.0, -6.0];
   }
 
   draw(gltf) {
@@ -624,7 +625,8 @@ class GLTFRenderer extends GLTFCommon {
       let mmat = Mat4.scale(modelMatrix, self.scale, self.scale, self.scale);
       mmat = Mat4.multiplyMM(rotateMatrix, mmat);
 
-      const vmat = Mat4.translate(viewMatrix, 0, 0, 0, -6);
+      const vmat = Mat4.translate(viewMatrix,
+        self.cameraPosition[0], self.cameraPosition[1], self.cameraPosition[2]);
       
       // const normalMatrix = Mat4.transpose(Mat4.inverse(Mat4.multiplyMM(viewMatrix, modelMatrix)));
       // gl.uniformMatrix4fv(Nmatrix, false, normalMatrix);
@@ -887,6 +889,8 @@ class GLTFRenderer extends GLTFCommon {
         renderer.scale *= 1. + (dx + dy) * 10 / Math.max(canvas.width, canvas.height);
       }
       if (dragMiddle) {
+        renderer.cameraPosition[0] += dx * 10 / canvas.width;
+        renderer.cameraPosition[1] -= dy * 10 / canvas.height;
       }
       deltaX = x, deltaY = y;
     });
