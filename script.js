@@ -557,21 +557,7 @@ class GLTFRenderer extends GLTFCommon {
 
     this.program = GLTFRenderer.createProgram(gl, vertexShaderCode, fragmentShaderCode);
 
-    this.zoom = -6;
-  }
-
-  static get MeshRenderer() {
-    return class MeshRenderer {
-      constructor(mesh) {
-        this.mesh = mesh;
-      }
-      draw() {
-      }
-    };
-  }
-
-  setZoom(zoom) {
-    this.zoom = zoom;
+    this.scale = 1.0;
   }
 
   draw(gltf) {
@@ -605,6 +591,7 @@ class GLTFRenderer extends GLTFCommon {
       ];
     }
 
+    // MVP Matrix
     var projMatrix = getProjection(40, canvas.width/canvas.height, 1, 100);
     var modelMatrix = Mat4.IdentityMatrix;
     var viewMatrix = Mat4.IdentityMatrix;
@@ -619,8 +606,10 @@ class GLTFRenderer extends GLTFCommon {
       Mat4.rotateY(modelMatrix, dt * 0.0005);
       Mat4.rotateX(modelMatrix, dt * 0.0003);
       time_old = time;
-      
-      const vmat = Mat4.translate(viewMatrix, 0, 0, self.zoom);
+
+      let mmat = Mat4.scale(modelMatrix, self.scale, self.scale, self.scale);
+
+      const vmat = Mat4.translate(viewMatrix, 0, 0, 0, -6);
       
       // const normalMatrix = Mat4.transpose(Mat4.inverse(Mat4.multiplyMM(viewMatrix, modelMatrix)));
       // gl.uniformMatrix4fv(Nmatrix, false, normalMatrix);
@@ -630,7 +619,7 @@ class GLTFRenderer extends GLTFCommon {
 
       gl.uniformMatrix4fv(Pmatrix, false, projMatrix);
       gl.uniformMatrix4fv(Vmatrix, false, vmat);
-      gl.uniformMatrix4fv(Mmatrix, false, modelMatrix);
+      gl.uniformMatrix4fv(Mmatrix, false, mmat);
 
       GLTFRenderer.drawScene(gl, shaderProgram, gltf);
 
@@ -879,11 +868,14 @@ class GLTFRenderer extends GLTFCommon {
 
       }
       if (dragRight) {
-        renderer.setZoom(renderer.zoom + dy / 100.);
+        renderer.scale *= 1. + (dx + dy) * 10 / Math.max(canvas.width, canvas.height);
       }
       if (dragMiddle) {
       }
       deltaX = x, deltaY = y;
+    });
+    canvas.addEventListener('wheel', (evt) => {
+      renderer.scale *= 1. - evt.deltaY / Math.max(canvas.width, canvas.height);
     });
 
     // disable context menu for right click event
