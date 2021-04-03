@@ -531,6 +531,7 @@ class GLTFLoader extends GLTFCommon {
     const srcType = gl.UNSIGNED_BYTE;
   
     const image = new Image();
+    image.crossOrigin = 'anonymous';
     image.onload = function() {
       gl.bindTexture(gl.TEXTURE_2D, texture);
       gl.texImage2D(gl.TEXTURE_2D, level, internalFormat,
