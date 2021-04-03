@@ -364,7 +364,7 @@ class GLTFLoader extends GLTFCommon {
     if (hasProgress) progress(0.0, 'initialize');
     await this.unload();
 
-    if (hasProgress) progress(0.0, 'load data from url');
+    if (hasProgress) progress(0.1, 'load data from url');
     url = new URL(url, this.baseURL).href;
     this.json = await GLTFLoader.loadData(url, 'json');
     this.gltf = JSON.parse(JSON.stringify(this.json));
@@ -375,12 +375,12 @@ class GLTFLoader extends GLTFCommon {
     this.gltf.baseURL = new URL(url, location.href);
     console.log('get json', this.json);
     
-    if (hasProgress) progress(0.1, 'reconstruct json');
+    if (hasProgress) progress(0.2, 'reconstruct json');
     const self = this;
     const gl = this.gl;
     
     // nodes
-    if (hasProgress) progress(0.1, 'reconstruct json (nodes)');
+    if (hasProgress) progress(0.3, 'reconstruct json (nodes)');
     this.gltf.nodes = await Promise.all(this.gltf.nodes.map((node) => {
       return new GLTFLoader.Node(node);
     }));
@@ -395,7 +395,7 @@ class GLTFLoader extends GLTFCommon {
     console.log('Nodes', this.gltf.nodes);
 
     // buffers
-    if (hasProgress) progress(0.2, 'reconstruct json (buffers)');
+    if (hasProgress) progress(0.4, 'reconstruct json (buffers)');
     this.gltf.buffers = await Promise.all(this.gltf.buffers.map((buffer) => {
       const url = new URL(buffer.uri, self.gltf.baseURL.href);
       return GLTFLoader.loadData(url.href, 'arraybuffer');
@@ -403,7 +403,7 @@ class GLTFLoader extends GLTFCommon {
     console.log('Buffer', this.gltf.buffers);
     
     // buffer views
-    if (hasProgress) progress(0.3, 'reconstruct json (buffer views)');
+    if (hasProgress) progress(0.5, 'reconstruct json (buffer views)');
     this.gltf.bufferViews = await Promise.all(this.gltf.bufferViews.map((bufferView) => {
       bufferView.count = bufferView.byteLength / (bufferView.byteStride || 1);
       return bufferView;
@@ -411,7 +411,7 @@ class GLTFLoader extends GLTFCommon {
     console.log('Buffer View', this.gltf.bufferViews);
 
     // accessors
-    if (hasProgress) progress(0.4, 'reconstruct json (accessors)');
+    if (hasProgress) progress(0.6, 'reconstruct json (accessors)');
     this.gltf.accessors = await Promise.all(this.gltf.accessors.map((accessor) => {
       const view = self.gltf.bufferViews[accessor.bufferView];
       const buffer = self.gltf.buffers[view.buffer];
@@ -665,6 +665,7 @@ class GLTFRenderer extends GLTFCommon {
     
     for (const primitive of mesh.primitives) {
       drawPrimitive(primitive);
+      gl.getProgramInfoLog(program);
     }
 
     function bindAttributeAccessor(name, accessor) {

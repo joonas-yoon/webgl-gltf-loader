@@ -63,6 +63,7 @@ select.dropdown {
 }
 .loading-overlay > .loading-bar > .message {
   position: absolute;
+  color: black;
   top: 0;
   left: 0;
   width: 100%;
