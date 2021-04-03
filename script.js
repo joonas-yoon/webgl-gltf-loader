@@ -405,12 +405,7 @@ class GLTFLoader extends GLTFCommon {
     // buffer views
     if (hasProgress) progress(0.3, 'reconstruct json (buffer views)');
     this.gltf.bufferViews = await Promise.all(this.gltf.bufferViews.map((bufferView) => {
-      bufferView._view = new DataView(
-        self.gltf.buffers[bufferView.buffer],
-        bufferView.byteOffset,
-        bufferView.byteLength
-      );
-      bufferView._count = bufferView.byteLength / (bufferView.byteStride || 1);
+      bufferView.count = bufferView.byteLength / (bufferView.byteStride || 1);
       return bufferView;
     }));
     console.log('Buffer View', this.gltf.bufferViews);
@@ -469,13 +464,22 @@ class GLTFLoader extends GLTFCommon {
       gl.deleteBuffer(accessor.glBuffer);
       return accessor;
     }));
+    
+    // buffers
+    for (let i=0; i < gltf.buffers.length; ++i) {
+      delete gltf.buffers[i];
+    }
 
+    // textures
     if (gltf.textures) {
       await Promise.all(gltf.textures.map((texture) => {
         gl.deleteTexture(texture.glTexture);
         return texture;
       }));
     }
+
+    delete this.json;
+    delete this.gltf;
 
     this.json = {};
     this.gltf = {};
