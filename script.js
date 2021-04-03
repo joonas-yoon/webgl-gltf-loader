@@ -558,6 +558,7 @@ class GLTFRenderer extends GLTFCommon {
     this.program = GLTFRenderer.createProgram(gl, vertexShaderCode, fragmentShaderCode);
 
     this.scale = 1.0;
+    this.rotate = [0, 0, 0]; // not quarterion, angle around XYZ axis
   }
 
   draw(gltf) {
@@ -596,18 +597,32 @@ class GLTFRenderer extends GLTFCommon {
     var modelMatrix = Mat4.IdentityMatrix;
     var viewMatrix = Mat4.IdentityMatrix;
 
+    // for interactive
+    var rotateMatrix = Mat4.IdentityMatrix;
+
+    function deaccelerate(x, min, max) {
+      const force = Math.abs(x) < 1e-6 ? 1.0 : 0.975;
+      return Math.max(min, Math.min(x * force, max));
+    }
+
     /*================= Drawing ===========================*/
     var time_old = 0;
     var animate = function(time) {
       gl.useProgram(shaderProgram);
 
+      // deacceleration
+      self.rotate[2] = deaccelerate(self.rotate[2], -1, 1);
+      self.rotate[1] = deaccelerate(self.rotate[1], -1, 1);
+      self.rotate[0] = deaccelerate(self.rotate[0], -1, 1);
+
+      // interactive rotate
       var dt = time - time_old;
-      Mat4.rotateZ(modelMatrix, dt * 0.0001);
-      Mat4.rotateY(modelMatrix, dt * 0.0005);
-      Mat4.rotateX(modelMatrix, dt * 0.0003);
+      Mat4.rotateY(rotateMatrix, self.rotate[1]);
+      Mat4.rotateX(rotateMatrix, self.rotate[0]);
       time_old = time;
 
       let mmat = Mat4.scale(modelMatrix, self.scale, self.scale, self.scale);
+      mmat = Mat4.multiplyMM(rotateMatrix, mmat);
 
       const vmat = Mat4.translate(viewMatrix, 0, 0, 0, -6);
       
@@ -865,7 +880,8 @@ class GLTFRenderer extends GLTFCommon {
       const x = evt.clientX, y = evt.clientY;
       const dx = x - deltaX, dy = y - deltaY;
       if (dragLeft) {
-
+        renderer.rotate[1] += Math.PI * dx / 5 / canvas.width;
+        renderer.rotate[0] += Math.PI * dy / 5 / canvas.height;
       }
       if (dragRight) {
         renderer.scale *= 1. + (dx + dy) * 10 / Math.max(canvas.width, canvas.height);
