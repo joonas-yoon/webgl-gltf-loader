@@ -442,8 +442,29 @@ class GLTFLoader extends GLTFCommon {
         return texture;
       }));
     }
-    
-    if (hasProgress) progress(0.9, 'precompleted');
+
+    function applyToArray(func, a, b) {
+      for (const i in a) a[i] = func(a[i], b[i]);
+      return a;
+    }
+
+    // detect scale factor to fit to screen
+    if (hasProgress) progress(0.9, 'fit a scene to screen');
+    let maxp = [0, 0, 0], minp = [0, 0, 0];
+    if (this.gltf.meshes) {
+      for (const mesh of this.gltf.meshes) {
+        for (const primitive of mesh.primitives) {
+          if (primitive.attributes.POSITION) {
+            const position = this.gltf.accessors[primitive.attributes.POSITION];
+            applyToArray(Math.max, maxp, position.max || [0, 0, 0]);
+            applyToArray(Math.min, minp, position.min || [0, 0, 0]);
+          }
+        }
+      }
+    }
+    const maxLength = Math.max.apply(null, [maxp[0]-minp[0], maxp[1]-minp[1], maxp[2]-minp[2]]);
+    this.gltf.scaleFactor = 2.0 / maxLength;
+    console.log('scaleFactor', this.gltf.scaleFactor);
 
     if (hasProgress) progress(1.0, 'completed');
 
@@ -606,6 +627,9 @@ class GLTFRenderer extends GLTFCommon {
     // for interactive
     var rotateMatrix = Mat4.IdentityMatrix;
 
+    // auto scaling
+    const scaleFactor = gltf.scaleFactor;
+
     function deaccelerate(x, min, max) {
       const force = Math.abs(x) < 1e-6 ? 1.0 : 0.975;
       return Math.max(min, Math.min(x * force, max));
@@ -627,7 +651,8 @@ class GLTFRenderer extends GLTFCommon {
       Mat4.rotateX(rotateMatrix, self.rotate[0]);
       time_old = time;
 
-      let mmat = Mat4.scale(modelMatrix, self.scale, self.scale, self.scale);
+      const scaled = self.scale * scaleFactor;
+      let mmat = Mat4.scale(modelMatrix, scaled, scaled, scaled);
       mmat = Mat4.multiplyMM(rotateMatrix, mmat);
 
       const vmat = Mat4.translate(viewMatrix,
@@ -695,16 +720,18 @@ class GLTFRenderer extends GLTFCommon {
       {
         const material = gltf.materials[primitive.material];
         var sampler = gl.getUniformLocation(program, "uSampler");
-        gl.activeTexture(gl.TEXTURE0);
         if (material && material.pbrMetallicRoughness.baseColorTexture !== undefined) {
           const texture = gltf.textures[material.pbrMetallicRoughness.baseColorTexture.index];
+          gl.activeTexture(gl.TEXTURE0);
           gl.bindTexture(gl.TEXTURE_2D, texture.glTexture);
+          gl.uniform1i(sampler, 0);
         } else {
           const baseColor = material.pbrMetallicRoughness.baseColorFactor || [1, 1, 1, 1];
           const texture = GLTFLoader.createEmptyTexture(gl, baseColor[0], baseColor[1], baseColor[2], baseColor[3]);
+          gl.activeTexture(gl.TEXTURE0);
           gl.bindTexture(gl.TEXTURE_2D, texture);
+          gl.uniform1i(sampler, 0);
         }
-        gl.uniform1i(sampler, 0);
       }
 
       {
@@ -888,8 +915,8 @@ class GLTFRenderer extends GLTFCommon {
       const x = evt.clientX, y = evt.clientY;
       const dx = x - deltaX, dy = y - deltaY;
       if (dragLeft) {
-        renderer.rotate[1] += Math.PI * dx / 5 / canvas.width;
-        renderer.rotate[0] += Math.PI * dy / 5 / canvas.height;
+        renderer.rotate[1] += Math.PI * dx / 2 / canvas.width;
+        renderer.rotate[0] += Math.PI * dy / 2 / canvas.height;
       }
       if (dragRight) {
         renderer.scale *= 1. + (dx + dy) * 10 / Math.max(canvas.width, canvas.height);
