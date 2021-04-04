@@ -605,7 +605,7 @@ class GLTFRenderer extends GLTFCommon {
     var Pmatrix = gl.getUniformLocation(shaderProgram, "uProjectionMatrix");
     var Vmatrix = gl.getUniformLocation(shaderProgram, "uViewMatrix");
     var Mmatrix = gl.getUniformLocation(shaderProgram, "uModelMatrix");
-    // var Nmatrix = gl.getUniformLocation(shaderProgram, "uNormalMatrix");
+    var Nmatrix = gl.getUniformLocation(shaderProgram, "uNormalMatrix");
 
     /*==================== MATRIX =====================*/
 
@@ -658,8 +658,8 @@ class GLTFRenderer extends GLTFCommon {
       const vmat = Mat4.translate(viewMatrix,
         self.cameraPosition[0], self.cameraPosition[1], self.cameraPosition[2]);
       
-      // const normalMatrix = Mat4.transpose(Mat4.inverse(Mat4.multiplyMM(viewMatrix, modelMatrix)));
-      // gl.uniformMatrix4fv(Nmatrix, false, normalMatrix);
+      const normalMatrix = Mat4.transpose(Mat4.inverse(Mat4.multiplyMM(viewMatrix, mmat)));
+      gl.uniformMatrix4fv(Nmatrix, false, normalMatrix);
 
       gl.viewport(0.0, 0.0, canvas.width, canvas.height);
       GLTFRenderer.clear(gl);
