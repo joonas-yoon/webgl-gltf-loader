@@ -463,7 +463,7 @@ class GLTFLoader extends GLTFCommon {
       }
     }
     const maxLength = Math.max.apply(null, [maxp[0]-minp[0], maxp[1]-minp[1], maxp[2]-minp[2]]);
-    this.gltf.scaleFactor = 2.0 / maxLength;
+    this.gltf.scaleFactor = maxLength ? 2.0 / maxLength : 1;
     console.log('scaleFactor', this.gltf.scaleFactor);
 
     if (hasProgress) progress(1.0, 'completed');
@@ -548,12 +548,16 @@ class GLTFLoader extends GLTFCommon {
   static createTexture(gl, url, sampler) {
     sampler = sampler || {};
   
-    const texture = this.createEmptyTexture(gl, 0, 0, 1, 1);
+    const texture = this.createEmptyTexture(gl, 0.1, 0.2, 1, 1);
     
     const level = 0;
     const internalFormat = gl.RGBA;
     const srcFormat = gl.RGBA;
     const srcType = gl.UNSIGNED_BYTE;
+    
+    function isPowerOfTwo(x) {
+      return Math.log2(x) % 1 === 0;
+    }
   
     const image = new Image();
     image.crossOrigin = 'anonymous';
@@ -566,7 +570,9 @@ class GLTFLoader extends GLTFCommon {
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, sampler.wrapT || gl.REPEAT);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, sampler.minFilter || gl.LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, sampler.magFilter || gl.LINEAR);
-      // gl.generateMipmap(gl.TEXTURE_2D);
+      if (isPowerOfTwo(image.width) && isPowerOfTwo(image.height)) {
+        gl.generateMipmap(gl.TEXTURE_2D);
+      }
       gl.bindTexture(gl.TEXTURE_2D, null);
     };
     image.src = url;
@@ -719,18 +725,18 @@ class GLTFRenderer extends GLTFCommon {
       // Texture
       {
         const material = gltf.materials[primitive.material];
-        var sampler = gl.getUniformLocation(program, "uSampler");
+        var textureLoc = gl.getUniformLocation(program, "uTexture");
         if (material && material.pbrMetallicRoughness.baseColorTexture !== undefined) {
           const texture = gltf.textures[material.pbrMetallicRoughness.baseColorTexture.index];
           gl.activeTexture(gl.TEXTURE0);
           gl.bindTexture(gl.TEXTURE_2D, texture.glTexture);
-          gl.uniform1i(sampler, 0);
+          gl.uniform1i(textureLoc, 0);
         } else {
           const baseColor = material.pbrMetallicRoughness.baseColorFactor || [1, 1, 1, 1];
           const texture = GLTFLoader.createEmptyTexture(gl, baseColor[0], baseColor[1], baseColor[2], baseColor[3]);
           gl.activeTexture(gl.TEXTURE0);
           gl.bindTexture(gl.TEXTURE_2D, texture);
-          gl.uniform1i(sampler, 0);
+          gl.uniform1i(textureLoc, 0);
         }
       }
 
