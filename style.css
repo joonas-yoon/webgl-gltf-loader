@@ -70,3 +70,14 @@ select.dropdown {
   font-size: 10px;
   text-align: center;
 }
+.error-message {
+  display: none;
+  width: 100%;
+  padding: 0.5rem 0.8rem;
+  color: #d20000;
+  background-color: #ffd1d1;
+  font-size: 90%;
+  box-sizing: border-box;
+  word-break: break-all;
+  white-space: break-spaces;
+}

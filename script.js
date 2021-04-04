@@ -343,13 +343,6 @@ class GLTFLoader extends GLTFCommon {
           node.traverse(fn);
         }
       }
-      get trs() {
-        const m = [...Mat4.IdentityMatrix]; // deep copy
-        m = Mat4.scale(m, this.scale[0], this.scale[1], this.scale[2]);
-        m = Mat4.rotate(m, this.rotation[0], this.rotation[1], this.rotation[2], this.rotation[3]);
-        m = Mat4.translate(m, this.translation[0], this.translation[1], this.translation[2]);
-        return Mat4.multiplyMM(m, this.matrix);
-      }
     };
   }
 
@@ -366,7 +359,12 @@ class GLTFLoader extends GLTFCommon {
 
     if (hasProgress) progress(0.1, 'load data from url');
     url = new URL(url, this.baseURL).href;
-    this.json = await GLTFLoader.loadData(url, 'json');
+    try {
+      this.json = await GLTFLoader.loadData(url, 'json');
+    } catch (errormsg) {
+      reject('Failed to load json: ' + errormsg);
+      return;
+    }
     this.gltf = JSON.parse(JSON.stringify(this.json));
     if (!this.gltf) {
       if (hasReject) reject('Unsupported or Bad glTF file format');
@@ -396,10 +394,15 @@ class GLTFLoader extends GLTFCommon {
 
     // buffers
     if (hasProgress) progress(0.4, 'reconstruct json (buffers)');
-    this.gltf.buffers = await Promise.all(this.gltf.buffers.map((buffer) => {
-      const url = new URL(buffer.uri, self.gltf.baseURL.href);
-      return GLTFLoader.loadData(url.href, 'arraybuffer');
-    }));
+    try {
+      this.gltf.buffers = await Promise.all(this.gltf.buffers.map((buffer) => {
+        const url = new URL(buffer.uri, self.gltf.baseURL.href);
+        return GLTFLoader.loadData(url.href, 'arraybuffer');
+      }));
+    } catch (errormsg) {
+      reject('Failed to load data as buffer: ' + errormsg);
+      return;
+    }
     console.log('Buffer', this.gltf.buffers);
     
     // buffer views
@@ -518,6 +521,9 @@ class GLTFLoader extends GLTFCommon {
               reject(err.message);
               return;
           }
+        } else if (xmlhttp.readyState == 4) {
+          console.log(xmlhttp);
+          reject(xmlhttp.responseURL + ' ' + xmlhttp.status);
         }
       };
 
@@ -527,6 +533,8 @@ class GLTFLoader extends GLTFCommon {
     });
   }
 
+
+  // TODO: do not create in animation loop
   static createArrayBuffer(gl, array, target, usage) {
     const buffer = gl.createBuffer();
     gl.bindBuffer(target || gl.ARRAY_BUFFER, buffer);
@@ -534,6 +542,7 @@ class GLTFLoader extends GLTFCommon {
     return buffer;
   }
   
+  // TODO: do not create in animation loop
   static createEmptyTexture(gl, r, g, b, a) {
     const texture = gl.createTexture();
     const pixel = new Uint8Array([
@@ -576,7 +585,6 @@ class GLTFLoader extends GLTFCommon {
       gl.bindTexture(gl.TEXTURE_2D, null);
     };
     image.src = url;
-    console.log(image.src);
   
     return texture;
   };
@@ -592,6 +600,9 @@ class GLTFRenderer extends GLTFCommon {
     this.scale = 1.0;
     this.rotate = [0, 0, 0]; // not quarterion, angle around XYZ axis
     this.cameraPosition = [0.0, 0.0, -6.0];
+
+    // callbacks
+    this.onError = console.error;
   }
 
   draw(gltf) {
@@ -637,9 +648,11 @@ class GLTFRenderer extends GLTFCommon {
     const scaleFactor = gltf.scaleFactor;
 
     function deaccelerate(x, min, max) {
-      const force = Math.abs(x) < 1e-6 ? 1.0 : 0.975;
+      const force = Math.abs(x) < 1e-4 ? 1.0 : 0.98;
       return Math.max(min, Math.min(x * force, max));
     }
+
+    this.rotate = [0, Math.PI / 20, 0]; // for twist like a spiral spring
 
     /*================= Drawing ===========================*/
     var time_old = 0;
@@ -732,7 +745,10 @@ class GLTFRenderer extends GLTFCommon {
           gl.bindTexture(gl.TEXTURE_2D, texture.glTexture);
           gl.uniform1i(textureLoc, 0);
         } else {
-          const baseColor = material.pbrMetallicRoughness.baseColorFactor || [1, 1, 1, 1];
+          let baseColor = [1, 1, 1, 1];
+          if (material && material.pbrMetallicRoughness && material.pbrMetallicRoughness.baseColorFactor) {
+            baseColor = material.pbrMetallicRoughness.baseColorFactor;
+          }
           const texture = GLTFLoader.createEmptyTexture(gl, baseColor[0], baseColor[1], baseColor[2], baseColor[3]);
           gl.activeTexture(gl.TEXTURE0);
           gl.bindTexture(gl.TEXTURE_2D, texture);
@@ -793,7 +809,7 @@ class GLTFRenderer extends GLTFCommon {
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
         gl.drawElements(primitive.mode || gl.TRIANGLES, indices.count, gl.UNSIGNED_SHORT, 0);
       } else {
-        gl.drawArrays(primitive.mode || gl.TRIANGLES, positions.count, gl.UNSIGNED_SHORT, 0);
+        gl.drawArrays(primitive.mode || gl.TRIANGLES, positions.count, gl.FLOAT, 0);
       }
     }
   }
@@ -833,12 +849,13 @@ class GLTFRenderer extends GLTFCommon {
 (function(){
   const KhronosURL = 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/';
 
-  const canvas = document.querySelector('#glcanvas');
+  const canvas = document.getElementById('glcanvas');
   const gl = canvas.getContext('webgl');
 
   const loadingBar = document.getElementById('loading-bar');
   const loadingContainer = loadingBar.parentNode;
   const dropdown = document.getElementById('gltf-samples');
+  const errorMessage = document.getElementById('error-message');
 
   function onResize() {
     loadingContainer.style.height = canvas.clientHeight + 'px';
@@ -849,6 +866,7 @@ class GLTFRenderer extends GLTFCommon {
   function onReady() {
     loadingContainer.classList.add('active');
     dropdown.setAttribute('disabled', true);
+    errorMessage.style.display = 'none';
   }
 
   function onLoaded() {
@@ -860,6 +878,13 @@ class GLTFRenderer extends GLTFCommon {
     console.info((100 * percentage) + '%', message);
     loadingBar.querySelector('.bar').style.width = (100 * percentage) + '%';
     loadingBar.querySelector('.message').innerText = message || 'Loading...';
+  }
+
+  function onError(message) {
+    console.error(message);
+    errorMessage.style.display = 'block';
+    errorMessage.innerHTML = '<p><b>Error</b></p>';
+    errorMessage.innerHTML += '<p>' + message + '</p>';
   }
 
   onResize();
@@ -877,7 +902,7 @@ class GLTFRenderer extends GLTFCommon {
       onLoaded();
       console.log(gltf);
       renderer.draw(gltf);
-    }, onProcess, console.error);
+    }, onProcess, onError);
   }
 
   // attach HTML events
