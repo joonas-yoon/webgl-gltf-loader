@@ -25,7 +25,7 @@ a {
 a:hover {
   color: yellowgreen;
 }
-select.dropdown {
+select.dropdown, input, button {
   padding: 0.3em 0.6em;
 }
 .loading-overlay {
@@ -60,6 +60,10 @@ select.dropdown {
   height: 100%;
   -webkit-transition: width 400ms;
   transition: width 400ms;
+}
+.loading-overlay > .loading-bar.error > .bar {
+  width: 100% !important;
+  background-color: #fe1919 !important;
 }
 .loading-overlay > .loading-bar > .message {
   position: absolute;

@@ -357,7 +357,7 @@ class GLTFLoader extends GLTFCommon {
     if (hasProgress) progress(0.0, 'initialize');
     await this.unload();
 
-    if (hasProgress) progress(0.1, 'load data from url');
+    if (hasProgress) progress(0.05, 'load data from url');
     url = new URL(url, this.baseURL).href;
     try {
       this.json = await GLTFLoader.loadData(url, 'json');
@@ -373,17 +373,16 @@ class GLTFLoader extends GLTFCommon {
     this.gltf.baseURL = new URL(url, location.href);
     console.log('get json', this.json);
     
-    if (hasProgress) progress(0.2, 'reconstruct json');
+    if (hasProgress) progress(0.1, 'reconstruct json');
     const self = this;
     const gl = this.gl;
     
     // nodes
-    if (hasProgress) progress(0.3, 'reconstruct json (nodes)');
+    if (hasProgress) progress(0.15, 'reconstruct json (nodes)');
     this.gltf.nodes = await Promise.all(this.gltf.nodes.map((node) => {
       return new GLTFLoader.Node(node);
     }));
     for (const node of this.gltf.nodes) {
-      console.log('Node:', node);
       node.children = await Promise.all(node.children.map((child) => {
         const target = self.gltf.nodes[child];
         target.parent = node;
@@ -393,9 +392,15 @@ class GLTFLoader extends GLTFCommon {
     console.log('Nodes', this.gltf.nodes);
 
     // buffers
-    if (hasProgress) progress(0.4, 'reconstruct json (buffers)');
+    if (hasProgress) progress(0.2, 'reconstruct json (buffers)');
     try {
+      const perLength = this.gltf.buffers.length;
+      const per = (0.4 - 0.2) / perLength;
+      let perSum = 0;
       this.gltf.buffers = await Promise.all(this.gltf.buffers.map((buffer) => {
+        if (hasProgress) progress(0.2 + perSum);
+        perSum += per;
+
         const url = new URL(buffer.uri, self.gltf.baseURL.href);
         return GLTFLoader.loadData(url.href, 'arraybuffer');
       }));
@@ -406,32 +411,60 @@ class GLTFLoader extends GLTFCommon {
     console.log('Buffer', this.gltf.buffers);
     
     // buffer views
-    if (hasProgress) progress(0.5, 'reconstruct json (buffer views)');
-    this.gltf.bufferViews = await Promise.all(this.gltf.bufferViews.map((bufferView) => {
-      bufferView.count = bufferView.byteLength / (bufferView.byteStride || 1);
-      return bufferView;
-    }));
+    if (hasProgress) progress(0.4, 'reconstruct json (buffer views)');
+    try {
+      const perLength = this.gltf.bufferViews.length;
+      const per = (0.6 - 0.4) / perLength;
+      let perSum = 0;
+      this.gltf.bufferViews = await Promise.all(this.gltf.bufferViews.map((bufferView) => {
+        if (hasProgress) progress(0.4 + perSum);
+        perSum += per;
+
+        bufferView.count = bufferView.byteLength / (bufferView.byteStride || 1);
+        return bufferView;
+      }));
+    } catch (errormsg) {
+      reject('Failed to generate bufferviews: ' + errormsg);
+      return;
+    }
     console.log('Buffer View', this.gltf.bufferViews);
 
     // accessors
     if (hasProgress) progress(0.6, 'reconstruct json (accessors)');
-    this.gltf.accessors = await Promise.all(this.gltf.accessors.map((accessor) => {
-      const view = self.gltf.bufferViews[accessor.bufferView];
-      const buffer = self.gltf.buffers[view.buffer];
-      accessor.byteSize = GLTFCommon.getComponentLength(accessor.type);
-      accessor.byteStride = view.byteStride || 0;
-      const length = accessor.count * accessor.byteSize;
-      const typedArray = GLTFCommon.getTypedArray(accessor.componentType);
-      accessor.typedArray = new typedArray(buffer, view.byteOffset + (accessor.byteOffset || 0), length);
-      accessor.glBuffer = GLTFLoader.createArrayBuffer(self.gl, accessor.typedArray);
-      return accessor;
-    }));
+    try {
+      const perLength = this.gltf.accessors.length;
+      const per = (0.8 - 0.6) / perLength;
+      let perSum = 0;
+      this.gltf.accessors = await Promise.all(this.gltf.accessors.map((accessor) => {
+        if (hasProgress) progress(0.6 + perSum);
+        perSum += per;
+
+        const view = self.gltf.bufferViews[accessor.bufferView];
+        const buffer = self.gltf.buffers[view.buffer];
+        accessor.byteSize = GLTFCommon.getComponentLength(accessor.type);
+        accessor.byteStride = view.byteStride || 0;
+        const length = accessor.count * accessor.byteSize;
+        const typedArray = GLTFCommon.getTypedArray(accessor.componentType);
+        accessor.typedArray = new typedArray(buffer, view.byteOffset + (accessor.byteOffset || 0), length);
+        accessor.glBuffer = GLTFLoader.createArrayBuffer(self.gl, accessor.typedArray);
+        return accessor;
+      }));
+    } catch (errormsg) {
+      reject('Failed to generate accessors: ' + errormsg);
+      return;
+    }
     console.log('Accessor', this.gltf.accessors);
 
     // textures
-    if (hasProgress) progress(0.7, 'reconstruct json (textures)');
+    if (hasProgress) progress(0.8, 'reconstruct json (textures)');
     if (this.gltf.textures) {
+      const perLength = this.gltf.textures.length;
+      const per = (0.9 - 0.8) / perLength;
+      let perSum = 0;
       this.gltf.textures = await Promise.all(this.gltf.textures.map((texture) => {
+        if (hasProgress) progress(0.8 + perSum);
+        perSum += per;
+
         let uri = null;
         if (texture.source !== undefined) {
           uri = self.gltf.images[texture.source].uri;
@@ -484,14 +517,18 @@ class GLTFLoader extends GLTFCommon {
     if (!gltf) return;
 
     // accessors
-    await Promise.all(gltf.accessors.map((accessor) => {
-      gl.deleteBuffer(accessor.glBuffer);
-      return accessor;
-    }));
+    if (gltf.accessors) {
+      await Promise.all(gltf.accessors.map((accessor) => {
+        gl.deleteBuffer(accessor.glBuffer);
+        return accessor;
+      }));
+    }
     
     // buffers
-    for (let i=0; i < gltf.buffers.length; ++i) {
-      delete gltf.buffers[i];
+    if (gltf.buffers) {
+      for (let i=0; i < gltf.buffers.length; ++i) {
+        delete gltf.buffers[i];
+      }
     }
 
     // textures
@@ -653,10 +690,11 @@ class GLTFRenderer extends GLTFCommon {
     }
 
     this.rotate = [0, Math.PI / 20, 0]; // for twist like a spiral spring
+    this.cameraPosition = [0.0, 0.0, -6.0];
 
     /*================= Drawing ===========================*/
-    var time_old = 0;
-    var animate = function(time) {
+    var timeStart = 0;
+    var animate = function(timeCurrent) {
       gl.useProgram(shaderProgram);
 
       // deacceleration
@@ -665,10 +703,8 @@ class GLTFRenderer extends GLTFCommon {
       self.rotate[0] = deaccelerate(self.rotate[0], -1, 1);
 
       // interactive rotate
-      var dt = time - time_old;
       Mat4.rotateY(rotateMatrix, self.rotate[1]);
       Mat4.rotateX(rotateMatrix, self.rotate[0]);
-      time_old = time;
 
       const scaled = self.scale * scaleFactor;
       let mmat = Mat4.scale(modelMatrix, scaled, scaled, scaled);
@@ -690,7 +726,7 @@ class GLTFRenderer extends GLTFCommon {
       GLTFRenderer.drawScene(gl, shaderProgram, gltf);
 
       window.requestAnimationFrame(animate);
-    }
+    };
     animate(0);
   }
 
@@ -856,6 +892,7 @@ class GLTFRenderer extends GLTFCommon {
   const loadingContainer = loadingBar.parentNode;
   const dropdown = document.getElementById('gltf-samples');
   const errorMessage = document.getElementById('error-message');
+  const form = document.getElementById('form');
 
   function onResize() {
     loadingContainer.style.height = canvas.clientHeight + 'px';
@@ -865,6 +902,7 @@ class GLTFRenderer extends GLTFCommon {
 
   function onReady() {
     loadingContainer.classList.add('active');
+    loadingBar.classList.remove('error');
     dropdown.setAttribute('disabled', true);
     errorMessage.style.display = 'none';
   }
@@ -875,16 +913,17 @@ class GLTFRenderer extends GLTFCommon {
   }
 
   function onProcess(percentage, message) {
-    console.info((100 * percentage) + '%', message);
+    if (message) console.info((100 * percentage) + '%', message);
     loadingBar.querySelector('.bar').style.width = (100 * percentage) + '%';
     loadingBar.querySelector('.message').innerText = message || 'Loading...';
   }
 
   function onError(message) {
-    console.error(message);
     errorMessage.style.display = 'block';
     errorMessage.innerHTML = '<p><b>Error</b></p>';
     errorMessage.innerHTML += '<p>' + message + '</p>';
+    loadingBar.classList.add('error');
+    dropdown.removeAttribute('disabled');
   }
 
   onResize();
@@ -914,6 +953,12 @@ class GLTFRenderer extends GLTFCommon {
       console.log(url);
       loadAndDrawGLTF(url);
     }
+  });
+
+  form.addEventListener('submit', (evt) => {
+    evt.preventDefault();
+    loadAndDrawGLTF(evt.target.url.value);
+    return false;
   });
 
   {
