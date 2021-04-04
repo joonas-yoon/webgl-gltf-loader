@@ -336,12 +336,40 @@ class GLTFLoader extends GLTFCommon {
 
         // extra properties for loader
         this.parent = undefined;
+        this.localTransform = this.updateLocalTransform();
+        this.worldTransform = this.localTransform;
+      }
+      setParent(node) {
+        this.parent = node;
+        this.worldTransform = Mat4.multiplyMM(node.worldTransform, this.localTransform);
       }
       traverse(fn) {
         fn(this); // preorder
         for (const node of this.children) {
           node.traverse(fn);
         }
+      }
+      updateLocalTransform() {
+        let trs = [...Mat4.IdentityMatrix];
+        trs = Mat4.scale(trs, this.scale[0], this.scale[1], this.scale[2]);
+        trs = Mat4.rotate(trs, this.rotation[0], this.rotation[1], this.rotation[2], this.rotation[3]);
+        trs = Mat4.translate(trs, this.translation[0], this.translation[1], this.translation[2]);
+        this.localTransform = Mat4.multiplyMM(trs, this.matrix);
+        return this.localTransform;
+      }
+      static getTransformInfo(m) {
+        return {
+          translation: { x: m[12], y: m[13], z: m[14] },
+          rotation: { x: m[3], y: m[7], z: m[11] },
+          scale: { x: m[0], y: m[5], z: m[10] }
+        };
+      }
+      // TODO: apply when render mesh
+      get localTransformInfo() {
+        return GLTFRenderer.Node.getTransformInfo(this.localTransform);
+      }
+      get worldTransformInfo() {
+        return GLTFRenderer.Node.getTransformInfo(this.worldTransform);
       }
     };
   }
@@ -385,7 +413,7 @@ class GLTFLoader extends GLTFCommon {
     for (const node of this.gltf.nodes) {
       node.children = await Promise.all(node.children.map((child) => {
         const target = self.gltf.nodes[child];
-        target.parent = node;
+        target.setParent(node);
         return target;
       }));
     }
