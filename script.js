@@ -346,6 +346,32 @@ class GLTFLoader extends GLTFCommon {
     };
   }
 
+  static get Animation() {
+    return class Animation {
+      constructor(json, gltf) {
+        this.channels = json.channels;
+        this.samplers = json.samplers;
+        this.name = json.name;
+
+        for (const sampler of this.samplers) {
+          const input = gltf.accessors[sampler.input];
+          console.log(input.typedArray);
+          const output = gltf.accessors[sampler.output];
+          let outputValues = [];
+          const compSize = output.typedArray.length / output.count;
+          for (let i=0; i < output.count; ++i) {
+            let v = [];
+            for (let j=0; j < compSize; ++j) {
+              v.push(output.typedArray[i * compSize + j]);
+            }
+            outputValues.push(v);
+          }
+          console.log(outputValues);
+        }
+      }
+    }
+  }
+
   // response(gltf: json)
   // progress(percent: int, message: string)
   // reject(message: string)
@@ -454,6 +480,15 @@ class GLTFLoader extends GLTFCommon {
       return;
     }
     console.log('Accessor', this.gltf.accessors);
+
+    // animations
+    if (hasProgress) progress(0.8, 'reconstruct json (animations)');
+    if (this.gltf.animations) {
+      this.gltf.animations = await Promise.all(this.gltf.animations.map((animation) => {
+        return new GLTFLoader.Animation(animation, self.gltf);
+      }));
+    }
+    console.log('Animations', this.gltf.animations);
 
     // textures
     if (hasProgress) progress(0.8, 'reconstruct json (textures)');
